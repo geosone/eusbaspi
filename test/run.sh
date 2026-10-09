@@ -29,6 +29,7 @@
 #               usb-storage,id=stick2,bus=usbhc.0,drive=u2'; the stick is
 #               "stick1", build/test/usb2.img holds "second stick read OK"
 #   SWAP_STEPS  several of them: 'MARK1=cmd|cmd;MARK2=cmd|...'
+#   EXTRA_FILES more files for the boot disk (space separated), e.g. SMARTDRV.EXE
 #   QEMU_EXTRA  more QEMU arguments
 #   TIMEOUT  seconds until the screen is captured (default 60)
 #
@@ -50,6 +51,7 @@ nasm -f bin -o "$OUT/CDSDUMP.COM" "$ROOT/tools/cdsdump.asm"
 nasm -f bin -o "$OUT/QEXIT.COM" "$ROOT/tools/qexit.asm"
 nasm -f bin -o "$OUT/DELAY.SYS" "$ROOT/tools/delay.asm"
 nasm -f bin -o "$OUT/SLEEP.COM" "$ROOT/tools/sleep.asm"
+nasm -f bin -w-reloc-abs-word -I"$ROOT/tools/" -I"$ROOT/src/" -o "$OUT/USBSYNC.COM" "$ROOT/tools/usbsync.asm" || exit 1
 cp "$BOOTIMG" "$OUT/boot.img"; chmod u+w "$OUT/boot.img"
 
 crlf() { tr '|' '\n' | sed 's/$/\r/'; }
@@ -72,7 +74,8 @@ if [ -z "${MM:-}" ] && { [ "${EMM:-0}" = 1 ] || [ "${HIGH:-0}" = 1 ]; }; then MM
     echo 'QEXIT'
 } | crlf > "$OUT/AUTOEXEC.BAT"
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$OUT/EUSBASPI.SYS" \
-      "$OUT/ASPITEST.COM" "$OUT/CDSDUMP.COM" "$OUT/QEXIT.COM" "$OUT/DELAY.SYS" "$OUT/SLEEP.COM" ::/
+      "$OUT/ASPITEST.COM" "$OUT/CDSDUMP.COM" "$OUT/QEXIT.COM" "$OUT/DELAY.SYS" "$OUT/SLEEP.COM" \
+      "$OUT/USBSYNC.COM" ${EXTRA_FILES:-} ::/
 
 # USB stick: 64 MB, one FAT16 partition with USBTEST.TXT
 truncate -s 64M "$OUT/usb.img"

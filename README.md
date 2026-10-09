@@ -39,6 +39,10 @@ and `SYSTEM.INI` of Windows 3.x, `[386Enh]`:
 
     device=C:\EUSBASPI\EUSBVXD.386
 
+## Unplugging: USBSYNC
+
+DOS, SMARTDRV and Windows keep written data in caches, and many sticks have a write cache of their own. Before unplugging a drive run `USBSYNC` (DOS, DOS box) or `USBSYNC.EXE` (Windows 3.1x, e.g. as a Program Manager icon). It writes the DOS buffers (and the 32-bit file access cache of Windows for Workgroups 3.11), the SMARTDRV cache and the drives' write caches (`SYNCHRONIZE CACHE` through ASPI) and then tells you that the drives can be unplugged. `/E` also stops (ejects) them, `/Q` shows messages only on errors, `/A` (DOS) uses all ASPI adapters.
+
 ## Switches
 
     DEVICE=EUSBASPI.SYS [/H[:n]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
@@ -56,12 +60,12 @@ and `SYSTEM.INI` of Windows 3.x, `[386Enh]`:
 
 Linux (or any system with the tools), GNU make:
 - [NASM](https://nasm.us) for `EUSBASPI.SYS`, `EUSBVXD.386` and the tools,
-- the Open Watcom linker (`WATCOM=/opt/watcom`) for `EUSBVXD.386`,
+- Open Watcom (`WATCOM=/opt/watcom`): the linker for `EUSBVXD.386`, the compiler for `USBSYNC.EXE`,
 - the [GeosOne DOS Installer](https://github.com/geosone/gdi) (`../gdi/build/INSTALL.EXE`, or `make package GDI=path`) for the package.
 
 | Command | |
 |---|---|
-| `make` | `build/EUSBASPI.SYS`, `build/EUSBVXD.386`, `build/ASPITEST.COM` |
+| `make` | `build/EUSBASPI.SYS`, `build/EUSBVXD.386`, `build/USBSYNC.COM`, `build/USBSYNCW.EXE` (Windows, installed as `USBSYNC.EXE`), `build/ASPITEST.COM` |
 | `make package` | `build/pkg/` and `build/eusbaspi.zip` |
 
 ## Tests

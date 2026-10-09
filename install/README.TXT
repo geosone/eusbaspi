@@ -47,6 +47,26 @@ Disable "USB legacy storage" (USB mass storage emulation) in the BIOS
 setup if possible: otherwise the BIOS keeps driving the controller.
 
 
+Unplugging USB drives: USBSYNC
+------------------------------
+
+DOS, SMARTDRV and Windows keep written data in caches for a while, and
+many USB sticks have a write cache of their own.  Before you unplug a
+drive, run
+
+    USBSYNC [/E] [/A] [/Q]          in DOS or a DOS box
+    USBSYNC.EXE [/E] [/Q]           in Windows 3.1x (add it to the Program
+                                    Manager: File / New / Program Item)
+
+It writes the DOS buffers (and the 32-bit file access cache of Windows
+for Workgroups 3.11), the SMARTDRV cache and the write caches of the USB
+drives (SYNCHRONIZE CACHE), then says that the drives can be unplugged.
+
+  /E  also stop (eject) the drives; unplug them afterwards
+  /A  (DOS) all ASPI host adapters, not only those of EUSBASPI
+  /Q  quiet: messages only on errors
+
+
 Switches
 --------
 
@@ -72,6 +92,8 @@ Files
 
   EUSBASPI.SYS   the driver
   EUSBVXD.386    Windows 3.x enhanced mode helper (memory mapped registers)
+  USBSYNC.COM    write all cached data before unplugging (DOS)
+  USBSYNC.EXE    the same for Windows 3.1x
   ASPITEST.COM   test program: lists the ASPI host adapters and devices
   README.TXT     this file
   LICENSE.TXT    GNU General Public License version 3

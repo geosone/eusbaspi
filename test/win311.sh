@@ -14,6 +14,8 @@
 #   MM=386max   386MAX.SYS (and 386MAX.VXD, MAXVXD=path) instead of HIMEM
 #   HIGH=1      load the drivers with DEVICEHIGH (EMMs only)
 #   WINBAT      commands for the DOS box (| separated, output > AUX)
+#   WINAPP      run this Windows program instead of the DOS box, e.g.
+#               'C:\USBSYNC.EXE /W:D:\T.DAT /Q /P' (USBSYNC.EXE is on C:)
 #   VXD=0       without EUSBVXD.386 (OHCI/EHCI/xHCI do not work then)
 #   TIMEOUT     seconds until the screen is captured (default 180)
 #
@@ -39,7 +41,9 @@ nasm -f bin -o "$OUT/c/QEXIT.COM" "$ROOT/tools/qexit.asm"
 nasm -f bin -o "$OUT/c/WINMODE.COM" "$ROOT/tools/winmode.asm"
 nasm -f bin -o "$OUT/c/DELAY.SYS" "$ROOT/tools/delay.asm"
 mcopy -i "$BOOTIMG" ::ASPIDISK.SYS "$OUT/c/"
-make -s -C "$ROOT" build/EUSBVXD.386 || exit 1
+make -s -C "$ROOT" build/EUSBVXD.386 build/USBSYNC.COM build/USBSYNCW.EXE || exit 1
+cp "$ROOT/build/USBSYNC.COM" "$OUT/c/"
+cp "$ROOT/build/USBSYNCW.EXE" "$OUT/c/USBSYNC.EXE"
 [ "${VXD:-1}" = 1 ] && cp "$ROOT/build/EUSBVXD.386" "$OUT/c/"
 cp "$BASE" "$OUT/test.img"
 
@@ -73,7 +77,7 @@ EXITDEV="-device isa-debug-exit,iobase=0xf4,iosize=0x04"
     echo 'ECHO --- real mode > AUX'
     echo 'TYPE D:\USBTEST.TXT > AUX'
     echo 'ECHO --- starting Windows > AUX'
-    echo 'C:\WINDOWS\WIN /3 C:\T.BAT'
+    echo "C:\\WINDOWS\\WIN /3 ${WINAPP:-C:\\T.BAT}"
     echo 'ECHO --- back from Windows > AUX'
     echo 'QEXIT'
 } | crlf > "$OUT/c/AUTOEXEC.BAT"
