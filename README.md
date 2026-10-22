@@ -13,7 +13,7 @@
 
 ## Installation
 
-Download the ZIP of the [latest release](https://github.com/geosone/eusbaspi/releases), unpack it to a disk or directory and run `INSTALL.EXE` (the [GeosOne DOS Installer](https://github.com/geosone/gdi)). It copies the files to `C:\EUSBASPI`, adds the driver to `CONFIG.SYS` and, if Windows 3.x is found, `EUSBVXD.386` to the `[386Enh]` section of its `SYSTEM.INI`. Options: upper memory, xHCI (`/X`), hot plugging (`/H`), and:
+Download the ZIP of the [latest release](https://github.com/geosone/eusbaspi/releases), unpack it to a disk or directory and run `INSTALL.EXE` (the [GeosOne DOS Installer](https://github.com/geosone/gdi)). It copies the files to `C:\OPENASPI` (shared with AHCIASPI and OpenASPI; the installer itself goes to `C:\OPENASPI\EUSBASPI`), adds the driver to `CONFIG.SYS` and, if Windows 3.x is found, `EUSBVXD.386` to the `[386Enh]` section of its `SYSTEM.INI`. Options: upper memory, xHCI (`/X`), hot plugging (`/H`), and:
 
 | Option | |
 |---|---|
@@ -21,12 +21,12 @@ Download the ZIP of the [latest release](https://github.com/geosone/eusbaspi/rel
 | CD-ROM drive | `ASPICD.SYS` in `CONFIG.SYS`, `/D:ASPICD0` for `MSCDEX` or `SHSUCDX` in `AUTOEXEC.BAT` |
 
 **ASPI drivers.** `ASPIDISK.SYS` and `ASPICD.SYS` are not free software and are not part of EUSBASPI. The installer finds them:
-1. **on the installation disk:** copy them next to `INSTALL.EXE` (e.g. onto the EUSBASPI disk), and the installer installs these copies to `C:\EUSBASPI`;
+1. **on the installation disk:** copy them next to `INSTALL.EXE` (e.g. onto the EUSBASPI disk), and the installer installs these copies to `C:\OPENASPI`;
 2. otherwise **on the computer:** in `C:\DOS`, the `PATH`, the Windows directory or the paths named in `CONFIG.SYS`/`AUTOEXEC.BAT`.
 
 The same holds for `MSCDEX.EXE` / `SHSUCDX.COM`. Options whose driver is found nowhere are left out.
 
-`INSTALL /U` in `C:\EUSBASPI` removes the installation again.
+`INSTALL /U` in `C:\OPENASPI\EUSBASPI` removes the installation again; `C:\OPENASPI` stays while AHCIASPI or OpenASPI are still there.
 
 Disable "USB legacy storage" (USB mass storage emulation) in the BIOS setup if possible: otherwise the BIOS keeps driving the controller.
 
@@ -66,7 +66,7 @@ Linux (or any system with the tools), GNU make:
 | Command | |
 |---|---|
 | `make` | `build/EUSBASPI.SYS`, `build/EUSBVXD.386`, `build/USBSYNC.COM`, `build/USBSYNCW.EXE` (Windows, installed as `USBSYNC.EXE`), `build/ASPITEST.COM` |
-| `make package` | `build/pkg/` and `build/eusbaspi.zip` |
+| `make package` | `build/pkg/`, `build/eusbaspi.zip` and the disk image `build/EUSBASPI.IMG` (mtools) |
 
 ## Tests
 

@@ -1,4 +1,4 @@
-EUSBASPI 0.1 - ASPI manager for USB mass storage
+EUSBASPI 0.3 - ASPI manager for USB mass storage
 ================================================
 
 EUSBASPI.SYS is an ASPI manager (device SCSIMGR$) for DOS.  It makes USB
@@ -24,9 +24,10 @@ Installation
 ------------
 
 Run INSTALL.EXE from the distribution disk or directory.  It copies the
-files, adds EUSBASPI.SYS to CONFIG.SYS and, if Windows 3.x is found,
-EUSBVXD.386 to the [386Enh] section of its SYSTEM.INI.  INSTALL /U in the
-installation directory removes it again.
+files to C:\OPENASPI (shared with AHCIASPI and OpenASPI), adds
+EUSBASPI.SYS to CONFIG.SYS and, if Windows 3.x is found, EUSBVXD.386 to
+the [386Enh] section of its SYSTEM.INI.  INSTALL /U in
+C:\OPENASPI\EUSBASPI removes it again.
 
 If INSTALL finds ASPIDISK.SYS, ASPICD.SYS and MSCDEX/SHSUCDX on the
 computer, it can add them as well (USB drives and CD-ROM drives get DOS

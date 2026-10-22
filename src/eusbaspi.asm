@@ -33,7 +33,7 @@
 %include "defs.inc"
 %include "aspi.inc"
 
-%define VERSION_STR '0.1'
+%define VERSION_STR '0.3'
 
 NPRD            equ     8               ; PRDT entries per command
 BOUNCE_SIZE     equ     800h            ; bounce buffer (2 KB, 2 KB aligned)
@@ -1907,8 +1907,13 @@ msg_bad_bar     db      'AHCI controller has no memory BAR', 13, 10, 0
 msg_vds_fail    db      'VDS lock of DMA buffers failed', 13, 10, 0
 msg_bad_method  db      'Requested access method not available', 13, 10, 0
 msg_no_a20      db      'Cannot enable A20 for flat mode', 13, 10, 0
+%ifdef USB_BUILD
+msg_no_dev      db      'No USB mass storage devices found', 13, 10, 0
+msg_not_inst    db      'EUSBASPI not installed', 13, 10, 0
+%else
 msg_no_dev      db      'No ATAPI devices found', 13, 10, 0
 msg_not_inst    db      'AHCIASPI not installed', 13, 10, 0
+%endif
 msg_bad_opt     db      'Unknown option ignored', 13, 10, 0
 msg_ctl3        db      ' at PCI ', 0
 msg_ctl4        db      ', ABAR ', 0
