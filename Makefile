@@ -44,11 +44,17 @@ clean:
 # distribution: INSTALL.EXE comes from the GeosOne DOS Installer
 # (https://github.com/geosone/gdi)
 GDI ?= ../gdi/build/INSTALL.EXE
+# the OpenASPI drivers (https://github.com/geosone/OpenAspi, make) and
+# SHSUCDX/CDAUDIO (https://github.com/geosone/shsucd, install/mkpkg.sh)
+OPENASPI ?= ../OpenAspi/build/dos
+SHSUCD ?= ../shsucd/build/pkg
 PKG = build/pkg
 package: all
 	rm -rf $(PKG) && mkdir -p $(PKG)
 	cp build/EUSBASPI.SYS build/EUSBVXD.386 build/ASPITEST.COM build/USBSYNC.COM $(PKG)/
 	cp build/USBSYNCW.EXE $(PKG)/USBSYNC.EXE
+	cd $(OPENASPI) && cp ASPICDA.SYS ASPIFDD.SYS ASPIDSK.SYS ASPITAP.SYS ASPISCAN.COM TAPECTL.COM $(abspath $(PKG))/
+	cd $(SHSUCD) && cp SHSUCDX.COM CDAUDIO.COM SHSUCD.LIC SHSUCD.TXT $(abspath $(PKG))/
 	cp install/INSTALL.INI install/README.TXT $(PKG)/
 	sed 's/$$/\r/' LICENSE > $(PKG)/LICENSE.TXT
 	cp $(GDI) $(PKG)/INSTALL.EXE

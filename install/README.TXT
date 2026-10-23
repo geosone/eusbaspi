@@ -1,10 +1,10 @@
-EUSBASPI 0.3 - ASPI manager for USB mass storage
+EUSBASPI 0.4 - ASPI manager for USB mass storage
 ================================================
 
 EUSBASPI.SYS is an ASPI manager (device SCSIMGR$) for DOS.  It makes USB
 mass storage devices - sticks, card readers, hard disks, CD/DVD and
-floppy drives - usable for DOS ASPI drivers such as ASPIDISK.SYS or
-ASPICD.SYS.
+floppy drives - usable for DOS ASPI drivers: the OpenASPI drivers that
+come with it, or others such as Adaptec's ASPIDISK.SYS and ASPICD.SYS.
 
 Supported:
   - USB controllers: UHCI, OHCI, EHCI (with companion controllers) and,
@@ -29,20 +29,37 @@ EUSBASPI.SYS to CONFIG.SYS and, if Windows 3.x is found, EUSBVXD.386 to
 the [386Enh] section of its SYSTEM.INI.  INSTALL /U in
 C:\OPENASPI\EUSBASPI removes it again.
 
-If INSTALL finds ASPIDISK.SYS, ASPICD.SYS and MSCDEX/SHSUCDX on the
-computer, it can add them as well (USB drives and CD-ROM drives get DOS
-drive letters).  ASPIDISK.SYS and ASPICD.SYS are not part of EUSBASPI;
-copied next to INSTALL.EXE (e.g. onto the installation disk), INSTALL
-installs these copies instead of searching the computer.
+The OpenASPI drivers (https://github.com/geosone/OpenAspi) come with it,
+each one an option; INSTALL loads the ones chosen after EUSBASPI.SYS:
+
+  ASPIDSK.SYS  sticks, card readers, disks (on by default)
+  ASPICDA.SYS  CD/DVD drives (on by default), with SHSUCDX for the drive
+               letter and digital CD audio through VSBHDA (CDAUDIO.COM
+               switches it)
+  ASPIFDD.SYS  ZIP, LS-120, LS-240, Clik!, Jaz
+  ASPITAP.SYS  tape drives (TAPECTL.COM)
+
+With EUSBASPI already loaded, ASPISCAN.COM finds ZIP/LS-120 and tape
+drives, and their options are preselected.  OpenASPI and SHSUCD have
+installers of their own as well; they all share C:\OPENASPI.
+
+CD-ROM: INSTALL puts SHSUCDX in the place of MSCDEX (MS-DOS) or NWCDEX
+(DR-DOS) in AUTOEXEC.BAT, with their drivers and drive letters, and adds
+" /D:ASPICDA0" to that line (or a new line
+"C:\OPENASPI\SHSUCDX.COM /D:ASPICDA0 /A:AUTO").  INSTALL /U puts MSCDEX
+or NWCDEX back.
+
+From 0.3: remove it first (INSTALL /U in C:\OPENASPI\EUSBASPI); 0.3 had
+loaded Adaptec's ASPIDISK and ASPICD, which use the same drives.
 
 By hand, CONFIG.SYS:
 
-    DEVICE=C:\EUSBASPI\EUSBASPI.SYS
-    DEVICE=C:\ASPI\ASPIDISK.SYS
+    DEVICE=C:\OPENASPI\EUSBASPI.SYS
+    DEVICE=C:\OPENASPI\ASPIDSK.SYS
 
 SYSTEM.INI of Windows 3.x, section [386Enh]:
 
-    device=C:\EUSBASPI\EUSBVXD.386
+    device=C:\OPENASPI\EUSBVXD.386
 
 Disable "USB legacy storage" (USB mass storage emulation) in the BIOS
 setup if possible: otherwise the BIOS keeps driving the controller.
@@ -96,10 +113,22 @@ Files
   USBSYNC.COM    write all cached data before unplugging (DOS)
   USBSYNC.EXE    the same for Windows 3.1x
   ASPITEST.COM   test program: lists the ASPI host adapters and devices
+  ASPISCAN.COM   which devices the OpenASPI drivers would take (OpenASPI)
   README.TXT     this file
   LICENSE.TXT    GNU General Public License version 3
   INSTALL.EXE    GeosOne DOS Installer (https://github.com/geosone/gdi)
   INSTALL.INI    its configuration
+
+Optional (installed when selected):
+
+  ASPIDSK.SYS    OpenASPI: sticks, card readers, disks (GPL 3)
+  ASPICDA.SYS    OpenASPI: CD/DVD
+  SHSUCDX.COM    CD-ROM redirector with digital CD audio (SHSUCD of Jason
+  CDAUDIO.COM    Hood, changed; https://github.com/geosone/shsucd)
+  SHSUCD.TXT     its readme, SHSUCD.LIC its license
+  ASPIFDD.SYS    OpenASPI: ZIP, LS-120 and other removable drives
+  ASPITAP.SYS    OpenASPI: tape drives
+  TAPECTL.COM    OpenASPI: tape control (rewind, eject, ...)
 
 
 Notes
