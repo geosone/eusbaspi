@@ -1,4 +1,4 @@
-EUSBASPI 0.4 - ASPI manager for USB mass storage
+EUSBASPI 0.5 - ASPI manager for USB mass storage
 ================================================
 
 EUSBASPI.SYS is an ASPI manager (device SCSIMGR$) for DOS.  It makes USB
@@ -36,7 +36,7 @@ each one an option; INSTALL loads the ones chosen after EUSBASPI.SYS:
   ASPICDA.SYS  CD/DVD drives (on by default), with SHSUCDX for the drive
                letter and digital CD audio through VSBHDA (CDAUDIO.COM
                switches it)
-  ASPIFDD.SYS  ZIP, LS-120, LS-240, Clik!, Jaz
+  ASPIFDD.SYS  ZIP, LS-120, LS-240, Clik!, Jaz, SyQuest
   ASPITAP.SYS  tape drives (TAPECTL.COM)
 
 With EUSBASPI already loaded, ASPISCAN.COM finds ZIP/LS-120 and tape
