@@ -1292,27 +1292,44 @@ write_opcodes_len equ   $ - write_opcodes
 ;-----------------------------------------------------------------------------
 ; Rewrite 6 byte commands that ATAPI devices commonly reject into their
 ; 10 byte equivalents.  CF if the request cannot be handled.
-;   READ(6), WRITE(6)   -> READ(10), WRITE(10)
-;   SEEK(6), REZERO     -> SEEK(10)
+;   READ(6), WRITE(6)   -> READ(10), WRITE(10)    (block devices)
+;   SEEK(6), REZERO     -> SEEK(10)                (block devices)
 ;   MODE SENSE(6)       -> MODE SENSE(10), answer converted back
 ;   MODE SELECT(6)      -> MODE SELECT(10), parameter list converted
 ;-----------------------------------------------------------------------------
 translate_cdb:
         mov     byte [s_xlate], XL_NONE
         mov     al, [cdb_buf]
-        cmp     al, SCSI_READ6
-        je      .rw6
-        cmp     al, SCSI_WRITE6
-        je      .rw6
+        ; READ(6), WRITE(6), SEEK(6) and REZERO UNIT address blocks only on
+        ; disk, WORM, CD and MO devices.  Elsewhere the opcodes mean other
+        ; things: on tape 01h is REWIND, and 08h/0Ah carry a transfer
+        ; length with a fixed bit, not an LBA.
+        push    bx
+        mov     bx, [s_dev]
+        mov     ah, [dev_type+bx]
+        pop     bx
+        and     ah, 1Fh
         cmp     al, SCSI_MODE_SENSE6
         je      .msense
         cmp     al, SCSI_MODE_SELECT6
         je      .mselect
+        cmp     ah, 00h                 ; disk
+        je      .block
+        cmp     ah, 04h                 ; WORM
+        je      .block
+        cmp     ah, 05h                 ; CD/DVD
+        je      .block
+        cmp     ah, 07h                 ; optical memory
+        jne     .none
+.block: cmp     al, SCSI_READ6
+        je      .rw6
+        cmp     al, SCSI_WRITE6
+        je      .rw6
         cmp     al, SCSI_SEEK6
         je      .seek6
         cmp     al, SCSI_REZERO_UNIT
         je      .rezero
-        clc
+.none:  clc
         ret
 
 .rezero:
