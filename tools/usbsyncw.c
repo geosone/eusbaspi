@@ -16,7 +16,7 @@
  *    EUSBASPI through the DOS ASPI manager (SCSIMGR$), called in real mode
  *    with DPMI 0301h through a small thunk in DOS memory
  *
- * Copyright (C) 2026 GeosOne.  GNU General Public License version 3. */
+ * Copyright (C) 2026 GeosOne.  GNU General Public License version 2 or later. */
 
 #include <windows.h>
 #include <string.h>

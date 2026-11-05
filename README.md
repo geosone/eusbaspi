@@ -78,4 +78,7 @@ Linux (or any system with the tools), GNU make:
 
 ## License
 
-GNU General Public License version 3, see [LICENSE](LICENSE).
+GNU General Public License version 2 or (at your option) any later
+version, see [LICENSE](LICENSE). The installer of the package
+([GDI](https://github.com/geosone/gdi)) is under version 3, its text
+`GPL3.TXT`.

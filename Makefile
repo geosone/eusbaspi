@@ -58,6 +58,7 @@ package: all
 	cp install/INSTALL.INI install/README.TXT $(PKG)/
 	sed 's/$$/\r/' LICENSE > $(PKG)/LICENSE.TXT
 	cp $(GDI) $(PKG)/INSTALL.EXE
+	sed 's/$$/\r/' $(dir $(GDI))../LICENSE > $(PKG)/GPL3.TXT
 	cd $(PKG) && rm -f ../eusbaspi.zip && zip -q -9 ../eusbaspi.zip *
 	# a 1.44 MB disk (mtools), e.g. for mkdosset.ps1 -Extra of msdosinst
 	cd $(PKG) && rm -f ../EUSBASPI.IMG && mformat -C -f 1440 -v EUSBASPI -i ../EUSBASPI.IMG :: && mcopy -i ../EUSBASPI.IMG * ::

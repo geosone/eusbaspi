@@ -13,7 +13,7 @@
 ; 3. the drives' own write caches: SYNCHRONIZE CACHE(10) through ASPI
 ; Exit code: 0 = done, 1 = no ASPI manager, 2 = a drive reported an error
 ;
-; Copyright (C) 2026 GeosOne.  GNU General Public License version 3.
+; Copyright (C) 2026 GeosOne.  GNU General Public License version 2 or later.
 ;=============================================================================
         cpu     386
         bits    16

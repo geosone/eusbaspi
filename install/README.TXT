@@ -16,7 +16,9 @@ Supported:
   - other ASPI managers (AHCIASPI.SYS, ASPI8DOS.SYS, ...): EUSBASPI chains
     to a manager loaded before it.
 
-License: GNU General Public License version 3 (see LICENSE.TXT).
+License: GNU General Public License version 2 or (at your option) any later
+version (see LICENSE.TXT).  The installer (GDI) is under version 3 (see
+GPL3.TXT).
 Source:  https://github.com/geosone/eusbaspi
 
 
@@ -115,13 +117,14 @@ Files
   ASPITEST.COM   test program: lists the ASPI host adapters and devices
   ASPISCAN.COM   which devices the OpenASPI drivers would take (OpenASPI)
   README.TXT     this file
-  LICENSE.TXT    GNU General Public License version 3
+  LICENSE.TXT    GNU General Public License version 2
+  GPL3.TXT       GNU General Public License version 3 (the installer)
   INSTALL.EXE    GeosOne DOS Installer (https://github.com/geosone/gdi)
   INSTALL.INI    its configuration
 
 Optional (installed when selected):
 
-  ASPIDSK.SYS    OpenASPI: sticks, card readers, disks (GPL 3)
+  ASPIDSK.SYS    OpenASPI: sticks, card readers, disks (GPL 2+)
   ASPICDA.SYS    OpenASPI: CD/DVD
   SHSUCDX.COM    CD-ROM redirector with digital CD audio (SHSUCD of Jason
   CDAUDIO.COM    Hood, changed; https://github.com/geosone/shsucd)
