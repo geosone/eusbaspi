@@ -26,9 +26,26 @@ if(NOT TARGET OpenASPI::native)
   add_subdirectory("${OPENASPI_SOURCE_DIR}" openaspi EXCLUDE_FROM_ALL)
 endif()
 
-add_library(eusbaspi_native STATIC native/usb.c native/msc.c native/xhci.c native/ehci.c native/ohci.c native/uhci.c)
+# The USB stack: the parent's EUSBCORE::core, else the submodule
+# third_party/eusbcore or EUSBCORE_SOURCE_DIR (default: ../eusbcore).
+if(NOT TARGET EUSBCORE::core)
+  set(EUSBCORE_SOURCE_DIR "" CACHE PATH "eusbcore source tree")
+  if(NOT EUSBCORE_SOURCE_DIR)
+    foreach(_d "${CMAKE_CURRENT_SOURCE_DIR}/third_party/eusbcore" "${CMAKE_CURRENT_SOURCE_DIR}/../eusbcore")
+      if(NOT EUSBCORE_SOURCE_DIR AND EXISTS "${_d}/CMakeLists.txt")
+        set(EUSBCORE_SOURCE_DIR "${_d}")
+      endif()
+    endforeach()
+  endif()
+  if(NOT EUSBCORE_SOURCE_DIR)
+    message(FATAL_ERROR "EUSBASPI: eusbcore not found (git submodule update --init)")
+  endif()
+  add_subdirectory("${EUSBCORE_SOURCE_DIR}" eusbcore EXCLUDE_FROM_ALL)
+endif()
+
+add_library(eusbaspi_native STATIC native/msc.c)
 target_include_directories(eusbaspi_native PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(eusbaspi_native PUBLIC OpenASPI::native)
+target_link_libraries(eusbaspi_native PUBLIC EUSBCORE::core OpenASPI::native)
 set_target_properties(eusbaspi_native PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
 add_library(EUSBASPI::native ALIAS eusbaspi_native)
 

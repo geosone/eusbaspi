@@ -12,7 +12,7 @@
 #include <string.h>
 
 #include "eusbaspi/native.h"
-#include "eusbaspi/usb.h"
+#include "eusbcore/usb.h"
 #include "openaspi/native/atapi.h"
 #include "openaspi/native/hba.h"
 #include "openaspi/native/host.h"
