@@ -70,6 +70,29 @@ Linux (or any system with the tools), GNU make:
 | `make` | `build/EUSBASPI.SYS`, `build/EUSBVXD.386`, `build/USBSYNC.COM`, `build/USBSYNCW.EXE` (Windows, installed as `USBSYNC.EXE`), `build/ASPITEST.COM` |
 | `make package` | `build/pkg/`, `build/eusbaspi.zip` and the disk image `build/EUSBASPI.IMG` (mtools) |
 
+## Native C USB stack
+
+`native/` is a USB stack in C for [OpenASPI](https://github.com/geosone/OpenAspi)'s native layer, for 32- and 64-bit systems that drive the controllers themselves, such as the GDOS kernel of [GonWare](https://gitea.disconnected-by-peer.at/GonSoft/GonWare). It follows `EUSBASPI.SYS`:
+
+| File | |
+|---|---|
+| `usb.c` | enumeration core: root ports, addresses, descriptors, configuration; hubs (up to five tiers, USB 3 hubs not yet); the route string and transaction translator for each device |
+| `xhci.c` | xHCI: BIOS handoff, scratchpads, command and event ring, a slot and transfer rings per device |
+| `ehci.c` | EHCI: BIOS handoff, async schedule, a queue head per endpoint; full- and low-speed devices on root ports go to the companion controller, behind a high-speed hub they use split transactions |
+| `ohci.c` | OHCI: ownership from SMM, control and bulk lists, an ED per endpoint |
+| `uhci.c` | UHCI: legacy support off, one queue head in every frame, a TD per packet (port I/O) |
+| `msc.c` | mass storage as one ASPI adapter `USB`: Bulk-Only (CBW/CSW, reset recovery, stalled data phases and CSWs) and CBI/CB (ADSC, interrupt status, UFI); every LUN one target |
+
+Requests run through OpenASPI's shared packet device handling, like ATAPI on AHCI and IDE: REQUEST SENSE as autosense and, for the ATAPI, UFI and SFF-8070i command sets, 12-byte packets and the 6-to-10-byte rules. Everything is polled; data goes through a bounce buffer per controller. Interrupt endpoints (CBI status) run on the async schedule of EHCI and the bulk list of OHCI, which is fine for the devices that have them.
+
+The embedding system provides the host services of `openaspi/native/host.h`, adds its controllers with `eusbaspi_add()` (EHCI before its companions), calls `usb_enumerate()` and then `eusbaspi_register_storage()`. Class drivers of its own (HID) use `usb_control()` and `usb_transfer()` on the devices in `usb.h`. CMake builds it as `EUSBASPI::native` on top of `OpenASPI::native`:
+
+```sh
+cmake -S . -B build/native -G Ninja && ninja -C build/native
+```
+
+Tested in QEMU on x86-64, i686 and AArch64: xHCI (super speed, a hub), EHCI, OHCI, UHCI and an EHCI with UHCI companions and a full-speed hub.
+
 ## Tests
 
 `test/install.sh` installs the package (`make package`) in QEMU with MS-DOS 7.1 (`BOOTIMG`, a boot floppy with XMGR, UDVD2 and MSCDEX): an IDE CD with MSCDEX before; after setup a USB CD and a USB stick on EHCI, both CDs with letters from SHSUCDX; `INSTALL /U` restores `CONFIG.SYS` and the MSCDEX line.
