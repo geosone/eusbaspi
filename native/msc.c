@@ -273,7 +273,18 @@ static int msc_reset(struct oa_hba *h, oa_u8 target)
     return OA_HOST_OK;
 }
 
-static const struct oa_hba_ops msc_ops = { msc_execute, msc_reset };
+/* UFI (subclass 4) and SFF-8070i (subclass 5) are the floppy-class command
+ * sets: USB floppy, LS-120/240 SuperDisk and ZIP. They take A:/B:. */
+static int msc_is_floppy(struct oa_hba *h, oa_u8 target)
+{
+    (void)h;
+    if (target >= ntargets) {
+        return 0;
+    }
+    return targets[target].m->subclass == 4u || targets[target].m->subclass == 5u;
+}
+
+static const struct oa_hba_ops msc_ops = { msc_execute, msc_reset, msc_is_floppy };
 
 static void probe_device(struct usb_dev *dev)
 {
