@@ -6,7 +6,8 @@
 ;
 ; The ASPI targets 0..n-1 are slots: an empty slot answers INQUIRY as a
 ; removable direct access device and everything else with NOT READY /
-; MEDIUM NOT PRESENT, so ASPIDISK gives it a drive letter like an empty ZIP
+; MEDIUM NOT PRESENT, so ASPIFDD (its name "USB slot") or ASPIDISK gives it
+; a drive letter like an empty ZIP
 ; drive.  Before a command is executed the root ports are looked at (at
 ; most every 1/2 second): a device that went away empties its slots, a new
 ; one is reset, enumerated and put into the first empty slot, whose next

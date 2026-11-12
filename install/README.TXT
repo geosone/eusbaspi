@@ -93,7 +93,8 @@ Switches
     DEVICE=EUSBASPI.SYS [/H[:n]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
 
   /H[:n]   Hot plugging: n drive slots (default 2, ASPI targets 0..n-1)
-           that get drive letters from ASPIDISK even when they are empty;
+           that get drive letters from ASPIFDD (or Adaptec's ASPIDISK)
+           even when they are empty; setup then also installs ASPIFDD;
            sticks can be plugged in and out while DOS runs.  The driver
            stays larger in memory.
   /ID:name ASPI manager name reported to the clients (up to 16

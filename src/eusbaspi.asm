@@ -16,7 +16,7 @@
 ;   DEVICE=EUSBASPI.SYS [/H[:n]] [/ID:name] [/L] [/M:F|B] [/T:s] [/X] [/Q] [/V]
 ;
 ;   /H[:n]  hot plugging: n slots (default 2, ASPI targets 0..n-1) that get
-;           drive letters from ASPIDISK even when empty; sticks can be
+;           drive letters from ASPIFDD or ASPIDISK even when empty; sticks can be
 ;           plugged in and out while DOS runs (root ports, see hotplug.inc).
 ;           The driver then stays larger (enumeration code resident).
 ;   /L      one ASPI target per USB device, its LUNs (card reader slots)
@@ -1149,9 +1149,15 @@ hot_empty:
         cmp     byte [cdb_buf], SCSI_REQUEST_SENSE
         je      hot_sense_data
         jmp     hot_check
-.inq:   mov     al, bl
-        add     al, '0'
-        mov     [hot_inq+25], al        ; "USB slot n"
+.inq:   mov     al, [dev_tgt+bx]        ; "USB slot n" / "USB slot nn"
+        aam                             ; AH = tens, AL = ones
+        add     ax, '00'
+        mov     word [hot_inq+25], '  '
+        cmp     ah, '0'
+        je      .one
+        xchg    al, ah
+        mov     [hot_inq+26], ah
+.one:   mov     [hot_inq+25], al
         mov     si, hot_inq
         mov     cx, hot_inq_len
         jmp     hot_data
@@ -1209,10 +1215,15 @@ hot_data:
         cmp     ecx, [s_len]
         jbe     .len
         mov     ecx, [s_len]
-.len:   les     di, [s_buf]
+.len:   mov     edx, [s_len]            ; bytes not transferred
+        sub     edx, ecx
+        les     di, [s_buf]
         rep     movsb
         les     si, [srb_ptr]
-        mov     byte [es:si+SRB_Status], SS_COMP
+        test    byte [es:si+SRB_Flags], SRB_RESIDUAL
+        jz      .done
+        mov     [es:si+SRB_BufLen], edx
+.done:  mov     byte [es:si+SRB_Status], SS_COMP
         jmp     call_post
 
 hot_inq         db      00h, 80h, 02h, 02h, 31, 0, 0, 0

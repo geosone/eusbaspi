@@ -126,6 +126,13 @@ start:
         call    call_aspi
         mov     al, [srb+HA_SCSI_ID]
         mov     [ha_id], al
+        mov     al, [srb+HA_Unique+3]   ; targets of the adapter, 0 = 8
+        or      al, al
+        jz      .eight
+        cmp     al, 32
+        jbe     .ntgt
+.eight: mov     al, 8
+.ntgt:  mov     [ha_targets], al
         mov     si, msg_adapter
         call    print
         movzx   ax, byte [hanum]
@@ -152,7 +159,8 @@ start:
         je      .skip
         call    test_target
 .skip:  inc     byte [target]
-        cmp     byte [target], 8
+        mov     al, [target]
+        cmp     al, [ha_targets]
         jb      .target
         inc     byte [hanum]
         jmp     .adapter
@@ -775,6 +783,7 @@ cdb_bogus       db      6, 0FFh, 0, 0, 0, 0, 0
 opt_e9          db      0
 opt_exit        db      0
 target          db      0
+ha_targets      db      8
 hanum           db      0
 ha_count        db      0
 ha_id           db      7
