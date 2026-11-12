@@ -221,6 +221,7 @@ XC_SUCCESS      equ     1
 XC_STALL        equ     6
 XC_SHORT        equ     13
 USB_BOUNCE      equ     1000h
+OHCI_OUT_MAX    equ     800h            ; 32 full speed packets of 64 bytes
 
 ;-----------------------------------------------------------------------------
 ; USB data
@@ -1160,7 +1161,10 @@ uhci_xfer:
         ret
 
 ; CF clear when the queue has stopped: element pointer terminated, or it
-; points at a TD that is no longer active (stall, error, short packet)
+; points at a TD that is no longer active because of a stall, an error or a
+; short packet.  A TD that completed in full doesn't count: the controller
+; writes its status first and moves the element pointer on after that, and
+; we may look in between (QEMU does that from another thread).
 .stopped:
         push    eax
         push    di
@@ -1175,8 +1179,21 @@ uhci_xfer:
         jae     .st_no
         add     ax, UD_UTD
         call    ud_addr
-        test    dword [di+4], UT_ACTIVE
-        jz      .st_yes
+        mov     eax, [di+4]
+        test    eax, UT_ACTIVE
+        jnz     .st_no
+        test    eax, UT_STALLED | UT_ERRORS
+        jnz     .st_yes
+        push    edx
+        inc     ax                      ; actual length
+        and     ax, 7FFh
+        mov     edx, [di+8]             ; maximum length
+        shr     edx, 21
+        inc     dx
+        and     dx, 7FFh
+        cmp     ax, dx
+        pop     edx
+        jb      .st_yes                 ; short packet
 .st_no: stc
         jmp     .st_ret
 .st_yes:
@@ -1847,8 +1864,22 @@ usb_scsi:
         je      .status
         mov     ecx, [x_rem]
         cmp     ecx, USB_BOUNCE
-        jbe     .chunk
+        jbe     .ohci
         mov     ecx, USB_BOUNCE
+.ohci:  ; OHCI writes: at most 32 packets per transfer.  QEMU 11 counts
+        ; every packet of an OUT TD against its ED loop limit (32) and
+        ; stops the controller after that ("Too many endpoint descriptors
+        ; in loop"); real controllers don't mind, it costs little there.
+        cmp     byte [x_write], 0
+        je      .chunk
+        push    bx
+        movzx   bx, byte [usbd_hc+bx]
+        cmp     byte [hc_type+bx], HC_OHCI
+        pop     bx
+        jne     .chunk
+        cmp     ecx, OHCI_OUT_MAX
+        jbe     .chunk
+        mov     ecx, OHCI_OUT_MAX
 .chunk: cmp     byte [x_write], 0
         je      .in
         push    cx                      ; client -> bounce
