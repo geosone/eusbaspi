@@ -38,7 +38,7 @@
 NPRD            equ     8               ; PRDT entries per command
 BOUNCE_SIZE     equ     800h            ; bounce buffer (2 KB, 2 KB aligned)
 STACK_SIZE      equ     0C00h           ; BIOS IRQ handlers run on it too
-MAX_DEV         equ     7               ; targets 0..6, adapter is ID 7
+MAX_DEV         equ     16              ; targets 0..15 but 7: the adapter
 HA_TARGET_ID    equ     7
 
 ; DMA area layout (offsets from a 2 KB aligned base)
@@ -65,6 +65,7 @@ TR_AHCI         equ     0
 TR_IDE          equ     1
 TR_USB          equ     2
 TR_EMPTY        equ     3               ; hot plug slot without a device
+TR_NONE         equ     4               ; target 7: the adapter
 
 ; IDE task file register offsets
 MAX_IDE_CH      equ     10
@@ -166,7 +167,7 @@ ha_ident        db      'AHCI SATA       '      ; 16 bytes
 %endif
 ha_unique       dw      0001h           ; buffer alignment mask (word)
                 db      0               ; reserved
-                db      MAX_DEV + 1     ; max targets
+                db      MAX_DEV         ; max targets
                 dd      10000h          ; max transfer length
                 times 8 db 0
 
@@ -905,6 +906,8 @@ find_dev:
         movzx   bx, byte [es:si+SRB_Target]
         cmp     bl, [dev_count]
         jae     .none
+        cmp     bl, HA_TARGET_ID
+        je      .none
         cmp     byte [es:si+SRB_Lun], 0
         jne     .none
         clc
@@ -2018,11 +2021,12 @@ init:
 .method_ok:
         movzx   cx, byte [hot_slots]    ; hot plug: empty slots first
         jcxz    .noslots
-        mov     [dev_count], cl
         xor     bx, bx
-.slot:  mov     byte [dev_trans+bx], TR_EMPTY
+.slot:  call    next_target
+        mov     byte [dev_trans+bx], TR_EMPTY
         mov     byte [dev_type+bx], 0
         inc     bx
+        mov     [dev_count], bl
         loop    .slot
 .noslots:
         call    usb_scan
@@ -2179,7 +2183,7 @@ parse_cmdline:
         jc      .bad
         or      ax, ax
         jz      .bad
-        cmp     ax, MAX_DEV
+        cmp     ax, MAX_DEV - 1
         ja      .bad
         mov     [hot_slots], al
         jmp     .args

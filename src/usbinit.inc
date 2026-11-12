@@ -484,18 +484,12 @@ xhci_init:
         ret
 .first: mov     byte [cur_hc], 0FFh
         call    hc_select               ; its (empty) state
-        cmp     dword [xh_phys], 0      ; the shared pages, once
+        cmp     dword [xh_phys], 0      ; the shared page, once
         jne     .area
-        call    alloc_page
+        xor     bx, bx
+        call    xh_getpage
         jc      .dead
-        mov     [xh_page], ax
-        mov     [xh_phys], edx
-        call    alloc_page
-        jc      .dead
-        mov     [xh_phys+4], edx
-        call    alloc_page
-        jc      .dead
-        mov     [xh_phys+8], edx
+        call    xh_ctx_xms
 .area:  mov     al, [xh_nhc]
         mov     ah, 0
         mov     dx, XH_AREA_SIZE
@@ -1015,6 +1009,126 @@ xh_slotcmd:
         mov     [xh_trb+12], eax
         jmp     xh_command
 
+; xHCI page BX (number) taken from the DMA area if it has none yet; CF if
+; the DMA area is used up
+xh_getpage:
+        push    bx
+        shl     bx, 2
+        cmp     dword [xh_phys+bx], 0   ; (CF clear)
+        jne     .out
+        push    ax
+        push    edx
+        call    alloc_page
+        jc      .no
+        mov     [xh_phys+bx], edx
+        shr     bx, 1
+        mov     [xh_poff+bx], ax
+        clc
+.no:    pop     edx
+        pop     ax
+.out:   pop     bx
+        ret
+
+; the device contexts of all xHCI devices in one XMS block (xh_ctx_phys),
+; 4 KB aligned; without XMS they take DMA pages, four per page
+xh_ctx_xms:
+        pushad
+        cmp     dword [xms_entry], 0
+        je      .out
+        mov     dx, (XHCI_DEV * XH_CTX_SIZE + 1000h) / 1024
+        mov     ah, 09h
+        call    far [xms_entry]
+        or      ax, ax
+        jz      .out
+        mov     [xh_ctx_xh], dx
+        mov     ah, 0Ch                 ; lock: DX:BX = physical address
+        call    far [xms_entry]
+        or      ax, ax
+        jz      .free
+        mov     ax, dx
+        shl     eax, 16
+        mov     ax, bx
+        mov     edx, eax
+        add     eax, 0FFFh
+        and     eax, ~0FFFh
+        mov     [xh_ctx_phys], eax
+        sub     eax, edx
+        mov     [xh_ctx_off], eax
+        jmp     .out
+.free:  mov     dx, [xh_ctx_xh]
+        mov     ah, 0Ah
+        call    far [xms_entry]
+.out:   popad
+        ret
+
+; xHCI device SI: its ring page, its device context cleared -> EDX = its
+; physical address; CF if there is no memory for it
+xh_devmem:
+        push    ax
+        push    bx
+        push    cx
+        push    di
+        mov     bx, si                  ; the page of its rings
+        shr     bx, 3
+        inc     bx
+        call    xh_getpage
+        jc      .out
+        mov     di, [bounce_ptr]        ; a cleared context
+        mov     eax, [xh_ctx_phys]
+        or      eax, eax
+        jnz     .clear
+        mov     bx, si                  ; without XMS: in a DMA page
+        shr     bx, 2
+        add     bx, XH_CTX_PAGE
+        call    xh_getpage
+        jc      .out
+        shl     bx, 12
+        mov     ax, si
+        and     ax, 3
+        shl     ax, 10
+        add     ax, bx
+        call    xa
+.clear: push    eax
+        push    es
+        push    cs
+        pop     es
+        push    di
+        mov     cx, XH_CTX_SIZE / 2
+        xor     ax, ax
+        rep     stosw
+        pop     di
+        pop     es
+        pop     edx
+        cmp     dword [xh_ctx_phys], 0
+        je      .ok
+        movzx   eax, si                 ; XMS: copy the cleared one there
+        shl     eax, 10
+        add     edx, eax
+        add     eax, [xh_ctx_off]
+        mov     [xms_mv_dst], eax
+        mov     ax, [xh_ctx_xh]
+        mov     [xms_mv_dh], ax
+        mov     dword [xms_mv_len], XH_CTX_SIZE
+        mov     [xms_mv_src], di
+        mov     [xms_mv_src+2], cs
+        push    si
+        push    edx
+        mov     si, xms_move
+        mov     ah, 0Bh
+        call    far [xms_entry]
+        pop     edx
+        pop     si
+        cmp     ax, 1
+        jne     .fail
+.ok:    clc
+        jmp     .out
+.fail:  stc
+.out:   pop     di
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
 ; new device BX on [init_port] of the xHCI: Enable Slot, Address Device
 xhci_new_dev:
         push    bx
@@ -1028,6 +1142,9 @@ xhci_new_dev:
 .got:
         mov     ax, si
         mov     [xh_map+bx], al
+        call    xh_devmem               ; its rings, cleared device context
+        jc      .fail
+        mov     [xh_ctxp], edx
         mov     al, [usbd_rootport+bx]
         mov     [xh_dport+si], al
         mov     al, [usbd_speed+bx]     ; port speed id: 1 full, 2 low,
@@ -1057,17 +1174,7 @@ xhci_new_dev:
         mov     [xh_slot+si], al
         inc     byte [xh_count]
 
-        mov     ax, si                  ; device context, DCBAA entry
-        call    xh_devoff
-        call    xa
-        mov     edx, eax
-        push    es
-        push    cs
-        pop     es
-        mov     cx, 200h
-        xor     ax, ax
-        rep     stosw
-        pop     es
+        mov     edx, [xh_ctxp]          ; DCBAA entry: its device context
         movzx   ax, byte [xh_slot+si]
         shl     ax, 3
         add     ax, XH_DCBAA
@@ -1518,6 +1625,9 @@ xh_dci_out      db      0
 xh_nscr         dw      0
 xh_scr_arr      dd      0
 xh_xms          dw      0
+xh_ctx_xh       dw      0               ; XMS block of the device contexts
+xh_ctx_off      dd      0               ;   offset of the first one in it
+xh_ctxp         dd      0
 xms_move:
 xms_mv_len      dd      0
                 dw      0               ; source: conventional memory
@@ -2263,6 +2373,15 @@ find_msc_interface:
 .none:  stc
         ret
 
+; BX = the next new target: target 7 is the adapter, it is left out
+next_target:
+        cmp     bx, HA_TARGET_ID
+        jne     .out
+        mov     byte [dev_trans+bx], TR_NONE
+        mov     byte [dev_type+bx], 0
+        inc     bx
+.out:   ret
+
 ; register LUN CH of USB device CL as the next ASPI target
 usb_add_target:
         movzx   bx, byte [dev_count]
@@ -2275,7 +2394,8 @@ usb_add_target:
         je      .take
         inc     bx
         jmp     .slot
-.new:   cmp     bx, MAX_DEV
+.new:   call    next_target
+        cmp     bx, MAX_DEV
         jae     .out
 .take:  mov     di, bx
         add     di, di
@@ -2300,7 +2420,8 @@ usb_add_target:
         call    probe_mode6
         cmp     bl, [dev_count]         ; a new target (not a slot)
         jb      .slotted
-        inc     byte [dev_count]
+        lea     ax, [bx+1]
+        mov     [dev_count], al
 .slotted:
         mov     al, [hot_active]        ; plugged in later: unit attention
         mov     [dev_ua+bx], al

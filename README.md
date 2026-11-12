@@ -4,6 +4,7 @@
 
 - USB controllers: UHCI, OHCI, EHCI (with companion controllers) and, with `/X`, xHCI (USB 3.x, up to 4 controllers)
 - USB hubs (up to 5 levels)
+- up to 16 USB devices (hubs included; a USB 3 hub counts twice) as ASPI targets 0-6 and 8-15 (7 is the adapter); xHCI keeps the device contexts in XMS, without an XMS driver it takes up to 8 devices. Adaptec's `ASPIDISK.SYS` only looks at targets 0-7, the OpenASPI drivers at all of them
 - Bulk-Only and CBI devices
 - hot plugging (`/H`): sticks can be changed while DOS runs
 - Windows 3.x DOS boxes (with `EUSBVXD.386` for OHCI, EHCI and xHCI)

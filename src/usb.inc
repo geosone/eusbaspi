@@ -13,7 +13,7 @@
 ;=============================================================================
 
 USB_MAX_HC      equ     12
-USB_MAX_DEV     equ     10              ; mass storage devices and hubs
+USB_MAX_DEV     equ     16              ; mass storage devices and hubs
 
 HC_OHCI         equ     1
 HC_EHCI         equ     2
@@ -161,14 +161,20 @@ UD_USED         equ     1D40h
 ; further 4 KB pages are handed out at init (alloc_page) and only stay
 ; resident when used: two UHCI frame lists, two xHCI pages
 
-; xHCI: three pages from xh_page on, shared by all xHCI controllers
+; xHCI: pages shared by all xHCI controllers, each taken when first needed
+; (xa maps the page number of an offset to the page)
 ;   page 0: input context, then one area per controller (DCBAA, event ring
 ;           segment table, command ring, event ring)
-;   page 1, 2: two devices each: device context (400h), then four transfer
-;           rings of 8 TRBs (control, bulk out, bulk in, interrupt)
+;   page 1, 2: eight devices each: four transfer rings of 8 TRBs (control,
+;           bulk out, bulk in, interrupt), 200h per device
+;   page 3..6: without XMS only: device contexts, four devices each (400h);
+;           with XMS they are in one XMS block (xh_ctx_phys) - the CPU
+;           only clears them
 XHCI_MAX        equ     4               ; xHCI controllers
-XHCI_DEV        equ     4               ; xHCI devices (all controllers)
-XHCI_SLOTS      equ     8
+XHCI_DEV        equ     16              ; xHCI devices (all controllers)
+XHCI_SLOTS      equ     15              ; the DCBAA has room for 16 entries
+XH_PAGES        equ     7
+XH_CTX_PAGE     equ     3
 XH_INCTX        equ     000h            ; input context (17 entries of 64)
 XH_AREA0        equ     480h            ; controller areas
 XH_AREA_SIZE    equ     2C0h
@@ -179,7 +185,7 @@ XH_CMD_TRBS     equ     16
 XH_EVTR         equ     1C0h            ; event ring, 16 TRBs
 XH_EVT_TRBS     equ     16
 XH_RING_TRBS    equ     8
-XH_DEV_SIZE     equ     600h            ; device context + 4 rings
+XH_CTX_SIZE     equ     400h            ; device context
 
 ; xHCI registers
 XO_USBCMD       equ     00h
@@ -238,8 +244,9 @@ phys_fl         dd      0               ; UHCI frame list: our QH everywhere
 phys_fl_idle    dd      0               ; UHCI frame list: nothing
 
 ; xHCI
-xh_page         dw      0               ; first xHCI page (from ud_base)
-xh_phys         times 3 dd 0
+xh_poff         times XH_PAGES dw 0     ; xHCI pages: offset from ud_base
+xh_phys         times XH_PAGES dd 0     ;   physical address, 0 = none yet
+xh_ctx_phys     dd      0               ; device contexts in XMS, 0 = none
 xh_cur          db      0FFh            ; controller whose state is loaded
 ; state of the current xHCI controller (swapped by hc_select)
 xh_state:
@@ -1276,14 +1283,15 @@ uh_count        dw      0
 ; AX = offset in the xHCI pages -> DI = pointer, EAX = physical address
 xa:
         movzx   eax, ax
-        mov     di, [ud_base]
-        add     di, [xh_page]
-        add     di, ax
         push    bx
         mov     bx, ax
         shr     bx, 12
-        shl     bx, 2
+        add     bx, bx
+        mov     di, [xh_poff+bx]
+        add     di, [ud_base]
+        add     bx, bx
         and     ax, 0FFFh
+        add     di, ax
         add     eax, [xh_phys+bx]
         pop     bx
         ret
@@ -1291,28 +1299,14 @@ xa:
 ; transfer ring AX (xHCI device * 4 + ring) -> AX = offset in the pages
 xh_ringoff:
         push    dx
-        push    ax
-        shr     ax, 2
-        call    xh_devoff
-        pop     dx
-        and     dx, 3
-        shl     dx, 7
-        add     ax, dx
-        add     ax, 400h
-        pop     dx
-        ret
-
-; xHCI device AX -> AX = offset of its device context
-xh_devoff:
-        push    dx
         mov     dx, ax
-        shr     ax, 1
-        inc     ax
-        shl     ax, 12
-        test    dl, 1
-        jz      .even
-        add     ax, XH_DEV_SIZE
-.even:  pop     dx
+        and     ax, 1Fh                 ; 8 devices of 4 rings per page
+        shl     ax, 7
+        shr     dx, 5
+        inc     dx
+        shl     dx, 12
+        add     ax, dx
+        pop     dx
         ret
 
 xop_rd: add     ax, [xh_op]
