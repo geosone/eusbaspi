@@ -53,6 +53,7 @@ DOS, SMARTDRV and Windows keep written data in caches, and many sticks have a wr
 | Switch | |
 |---|---|
 | `/H[:n]` | hot plugging: n drive slots (default 2) that get drive letters from ASPIDSK or ASPIDISK even when empty; the driver stays larger in memory |
+| `/L` | one ASPI target per USB device, with its LUNs (e.g. the slots of a card reader) as ASPI LUNs; by default every LUN is a target of its own. For drivers that look at LUNs, such as ASPIDSK |
 | `/ID:name` | ASPI manager name (up to 16 characters, default `EUSBASPI`) |
 | `/M:x` | register access: `F` flat real mode (not with EMM386 etc.), `B` BIOS INT 15h AH=87h; default: one that works |
 | `/T:s` | command timeout in seconds (default 15) |

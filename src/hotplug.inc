@@ -222,7 +222,10 @@ hot_remove_port:
         cmp     al, bl
         jne     .ntgt
         mov     byte [dev_trans+di], TR_EMPTY
-        mov     byte [dev_type+di], 0
+        cmp     byte [dev_lun+di], 0    ; /L: only LUN 0 stays a slot
+        je      .slot
+        mov     byte [dev_trans+di], TR_NONE
+.slot:  mov     byte [dev_type+di], 0
         mov     byte [dev_ua+di], 0
 .ntgt:  inc     di
         jmp     .tgt

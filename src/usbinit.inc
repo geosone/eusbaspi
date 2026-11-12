@@ -2373,6 +2373,34 @@ find_msc_interface:
 .none:  stc
         ret
 
+; /L: AL = the target after the highest one in use (7 left out); CF if
+; there is none
+new_lun_target:
+        push    bx
+        mov     al, 0FFh
+        xor     bx, bx
+.e:     cmp     bl, [dev_count]
+        jae     .got
+        cmp     byte [dev_trans+bx], TR_NONE
+        je      .n
+        cmp     al, 0FFh
+        je      .take
+        cmp     [dev_tgt+bx], al
+        jbe     .n
+.take:  mov     al, [dev_tgt+bx]
+.n:     inc     bx
+        jmp     .e
+.got:   inc     al
+        cmp     al, HA_TARGET_ID
+        jne     .chk
+        inc     al
+.chk:   cmp     al, MAX_DEV
+        cmc
+        pop     bx
+        ret
+
+l_tgt           db      0               ; /L: target of the device's LUN 0
+
 ; BX = the next new target: target 7 is the adapter, it is left out
 next_target:
         cmp     bx, HA_TARGET_ID
@@ -2384,19 +2412,47 @@ next_target:
 
 ; register LUN CH of USB device CL as the next ASPI target
 usb_add_target:
-        movzx   bx, byte [dev_count]
+        cmp     byte [opt_lun], 0       ; /L: LUN 1.. under the target of
+        je      .lun0                   ; LUN 0, in an unused entry
+        or      ch, ch
+        jz      .lun0
+        xor     bx, bx
+.free:  cmp     bl, [dev_count]
+        jae     .append
+        cmp     byte [dev_trans+bx], TR_NONE
+        je      .lunent
+        inc     bx
+        jmp     .free
+.append:
+        cmp     bx, MAX_DEV
+        jae     .out
+.lunent:
+        mov     al, [l_tgt]
+        mov     [dev_tgt+bx], al
+        mov     [dev_lun+bx], ch
+        jmp     .take
+.lun0:  movzx   bx, byte [dev_count]
         cmp     byte [hot_slots], 0     ; hot plug: first empty slot
         je      .new
         xor     bx, bx
 .slot:  cmp     bl, [dev_count]
         jae     .new
         cmp     byte [dev_trans+bx], TR_EMPTY
-        je      .take
+        je      .took
         inc     bx
         jmp     .slot
 .new:   call    next_target
         cmp     bx, MAX_DEV
         jae     .out
+        mov     [dev_tgt+bx], bl        ; target = entry
+        mov     byte [dev_lun+bx], 0
+        cmp     byte [opt_lun], 0
+        je      .took
+        call    new_lun_target          ; /L: the next unused target
+        jc      .out
+        mov     [dev_tgt+bx], al
+.took:  mov     al, [dev_tgt+bx]
+        mov     [l_tgt], al
 .take:  mov     di, bx
         add     di, di
         mov     [dev_port+di], cx

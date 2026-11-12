@@ -13,12 +13,16 @@
 ; Build:  nasm -f bin -Isrc/ -o EUSBASPI.SYS src/eusbaspi.asm
 ;
 ; CONFIG.SYS:
-;   DEVICE=EUSBASPI.SYS [/H[:n]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
+;   DEVICE=EUSBASPI.SYS [/H[:n]] [/ID:name] [/L] [/M:F|B] [/T:s] [/X] [/Q] [/V]
 ;
 ;   /H[:n]  hot plugging: n slots (default 2, ASPI targets 0..n-1) that get
 ;           drive letters from ASPIDISK even when empty; sticks can be
 ;           plugged in and out while DOS runs (root ports, see hotplug.inc).
 ;           The driver then stays larger (enumeration code resident).
+;   /L      one ASPI target per USB device, its LUNs (card reader slots)
+;           as ASPI LUNs; by default every LUN is a target of its own.
+;
+; ASPI targets 0..6 and 8..15 (16 entries); 7 is the adapter.
 ;
 ; Windows 3.1x enhanced mode: OHCI, EHCI and xHCI need EUSBVXD.386 in
 ; SYSTEM.INI [386Enh] (device=C:\EUSBVXD.386) for their memory mapped
@@ -198,6 +202,8 @@ dev_pnum        times MAX_DEV db 0
 dev_trans       times MAX_DEV db 0      ; TR_AHCI / TR_IDE
 dev_sel         times MAX_DEV db 0      ; IDE: A0h master, B0h slave
 dev_ua          times MAX_DEV db 0      ; unit attention pending (hot plug)
+dev_tgt         times MAX_DEV db 0      ; ASPI target and LUN of the entry
+dev_lun         times MAX_DEV db 0      ;   (without /L: target = entry)
 
 ; hot plug (/H, see hotplug.inc)
 hot_slots       db      0               ; 0: off, else number of slots
@@ -903,16 +909,25 @@ srb_ha_inquiry:
 
 ; ES:SI = SRB -> BX = device index.  CF (and status set) if no device.
 find_dev:
-        movzx   bx, byte [es:si+SRB_Target]
-        cmp     bl, [dev_count]
+        push    ax
+        mov     al, [es:si+SRB_Target]
+        mov     ah, [es:si+SRB_Lun]
+        xor     bx, bx
+.e:     cmp     bl, [dev_count]
         jae     .none
-        cmp     bl, HA_TARGET_ID
-        je      .none
-        cmp     byte [es:si+SRB_Lun], 0
-        jne     .none
+        cmp     byte [dev_trans+bx], TR_NONE
+        je      .n
+        cmp     al, [dev_tgt+bx]
+        jne     .n
+        cmp     ah, [dev_lun+bx]
+        je      .ok
+.n:     inc     bx
+        jmp     .e
+.ok:    pop     ax
         clc
         ret
-.none:  mov     byte [es:si+SRB_Status], SS_NO_DEVICE
+.none:  pop     ax
+        mov     byte [es:si+SRB_Status], SS_NO_DEVICE
         stc
         ret
 
@@ -1611,6 +1626,7 @@ opt_method      db      AM_NONE         ; /M: forced access method
 opt_quiet       db      0               ; /Q
 opt_verbose     db      0               ; /V
 opt_xhci        db      0               ; /X: take the xHCI controller over
+opt_lun         db      0               ; /L: one target per device, its LUNs
 msg_resident    db      '  resident: ', 0
 msg_bytes       db      ' bytes at segment ', 0
 pci_lastbus     db      0
@@ -1743,9 +1759,15 @@ print_dev:
         push    bx
         mov     si, msg_id
         call    print
-        mov     ax, bx
+        movzx   ax, byte [dev_tgt+bx]
         call    print_dec
-        cmp     byte [dev_trans+bx], TR_IDE
+        cmp     byte [opt_lun], 0       ; /L: target:LUN
+        je      .nolun
+        mov     al, ':'
+        call    putc
+        movzx   ax, byte [dev_lun+bx]
+        call    print_dec
+.nolun: cmp     byte [dev_trans+bx], TR_IDE
         je      .ide
         mov     si, msg_port
         cmp     byte [dev_trans+bx], TR_USB
@@ -2025,6 +2047,8 @@ init:
 .slot:  call    next_target
         mov     byte [dev_trans+bx], TR_EMPTY
         mov     byte [dev_type+bx], 0
+        mov     [dev_tgt+bx], bl
+        mov     byte [dev_lun+bx], 0
         inc     bx
         mov     [dev_count], bl
         loop    .slot
@@ -2151,6 +2175,8 @@ parse_cmdline:
         je      .opt_x
         cmp     al, 'H'
         je      .opt_h
+        cmp     al, 'L'
+        je      .opt_l
 .bad:   push    si
         mov     si, msg_bad_opt
         call    print
@@ -2172,6 +2198,8 @@ parse_cmdline:
 .opt_q: mov     byte [opt_quiet], 1
         jmp     .args
 .opt_v: mov     byte [opt_verbose], 1
+        jmp     .args
+.opt_l: mov     byte [opt_lun], 1
         jmp     .args
 .opt_x: mov     byte [opt_xhci], 1
         jmp     .args
