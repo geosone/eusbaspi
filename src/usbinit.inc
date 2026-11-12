@@ -743,11 +743,13 @@ xhci_port:
         call    reg_rd
         test    al, 1                   ; connected?
         jz      .out
-        test    al, 2                   ; USB 3 ports enable themselves
-        jnz     .enabled
+        ; a port reset right before the device is addressed, on USB 3
+        ; ports too, which enable themselves: so only this device is in
+        ; the default state.  VirtualBox otherwise addresses the device of
+        ; another USB 3 port: with two, the first did not answer.
         mov     byte [xh_warm], 0
-        and     eax, XP_KEEP            ; USB 2 (or a stuck USB 3 link):
-        or      al, 10h                 ; port reset
+        and     eax, XP_KEEP            ; port reset (a stuck USB 3 link
+        or      al, 10h                 ; gets a warm reset below)
 .reset: mov     ecx, eax
         mov     ax, [port_reg]
         call    reg_wr

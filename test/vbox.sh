@@ -10,6 +10,8 @@
 #   USBHC    ohci | ehci | xhci (default ohci; ehci also enables the OHCI
 #            companion like a real PC)
 #   DEVICES, BATCH  as in test/run.sh
+#   DISKS    USB sticks, one per port (default 1); stick n has USBTEST.TXT
+#            with its number, so the second one says "USB stick 2 read OK"
 #   TIMEOUT  seconds to wait for 'END OF TEST' (default 120)
 #   KEEP=1   keep the VM (default: unregister and delete it)
 #
@@ -47,13 +49,17 @@ crlf() { tr '|' '\n' | sed 's/$/\r/'; }
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$OUT/EUSBASPI.SYS" \
       "$OUT/ASPITEST.COM" "$OUT/CDSDUMP.COM" ::/
 
-# USB stick: 64 MB, one FAT16 partition with USBTEST.TXT
-truncate -s 64M "$OUT/usb.img"
-echo 'start=63, type=6' | sfdisk -q "$OUT/usb.img"
-mkfs.fat -F16 -n USBSTICK --offset 63 "$OUT/usb.img" $(( (64*2048 - 63) / 2 )) >/dev/null
-printf 'USB stick read OK\r\n' > "$OUT/USBTEST.TXT"
-mcopy -i "$OUT/usb.img@@32256" "$OUT/USBTEST.TXT" ::/
-VBoxManage convertfromraw "$OUT/usb.img" "$OUT/usb.vdi" --format VDI >/dev/null || exit 1
+# USB sticks: 64 MB, one FAT16 partition with USBTEST.TXT
+DISKS=${DISKS:-1}
+for ((n = 1; n <= DISKS; n++)); do
+    s=$n; [ "$n" = 1 ] && s=
+    truncate -s 64M "$OUT/usb$s.img"
+    echo 'start=63, type=6' | sfdisk -q "$OUT/usb$s.img"
+    mkfs.fat -F16 -n USBSTICK$s --offset 63 "$OUT/usb$s.img" $(( (64*2048 - 63) / 2 )) >/dev/null
+    printf 'USB stick%s read OK\r\n' "${s:+ $s}" > "$OUT/USBTEST.TXT"
+    mcopy -o -i "$OUT/usb$s.img@@32256" "$OUT/USBTEST.TXT" ::/
+    VBoxManage convertfromraw "$OUT/usb$s.img" "$OUT/usb$s.vdi" --format VDI >/dev/null || exit 1
+done
 
 USBOPT=(--usb-ohci=on)
 case $HC in
@@ -67,7 +73,10 @@ VBoxManage modifyvm "$VM" --memory 32 --vram 16 --boot1 floppy --boot2 none --bo
 VBoxManage storagectl "$VM" --name FD --add floppy
 VBoxManage storageattach "$VM" --storagectl FD --port 0 --device 0 --type fdd --medium "$OUT/boot.img"
 VBoxManage storagectl "$VM" --name USB --add usb
-VBoxManage storageattach "$VM" --storagectl USB --port 0 --device 0 --type hdd --medium "$OUT/usb.vdi"
+for ((n = 1; n <= DISKS; n++)); do
+    s=$n; [ "$n" = 1 ] && s=
+    VBoxManage storageattach "$VM" --storagectl USB --port $((n - 1)) --device 0 --type hdd --medium "$OUT/usb$s.vdi"
+done
 
 VBoxManage startvm "$VM" --type headless >/dev/null || exit 1
 for ((i = 0; i < ${TIMEOUT:-120}; i++)); do
