@@ -8,7 +8,7 @@ WLINK   = $(WATCOM)/binl64/wlink
 
 all: build/EUSBASPI.SYS build/ASPITEST.COM build/USBSYNC.COM build/USBSYNCW.EXE build/EUSBVXD.386
 
-build/EUSBASPI.SYS: src/eusbaspi.asm src/usb.inc src/usbinit.inc src/hotplug.inc src/aspi.inc src/defs.inc | build
+build/EUSBASPI.SYS: src/eusbaspi.asm src/usb.inc src/usbinit.inc src/hotplug.inc src/biosdisk.inc src/biosinit.inc src/aspi.inc src/defs.inc | build
 	$(NASM) $(NFLAGS) -Isrc/ -l build/eusbaspi.lst -o $@ $<
 
 build/ASPITEST.COM: tools/aspitest.asm src/aspi.inc | build

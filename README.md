@@ -49,12 +49,12 @@ DOS, SMARTDRV and Windows keep written data in caches, and many sticks have a wr
 
 ## Switches
 
-    DEVICE=EUSBASPI.SYS [/H[:n]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
+    DEVICE=EUSBASPI.SYS [/F] [/H[:n]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
 
 | Switch | |
 |---|---|
 | `/H[:n]` | hot plugging: n drive slots (default 2) that get drive letters from ASPIFDD (OpenASPI) or Adaptec's ASPIDISK even when empty; the driver stays larger in memory |
-| `/L` | one ASPI target per USB device, with its LUNs (e.g. the slots of a card reader) as ASPI LUNs; by default every LUN is a target of its own. For drivers that look at LUNs, such as ASPIDSK |
+| `/F` | flat numbering: every LUN is an ASPI target of its own, as in 0.5. By default each USB device is one ASPI target and its LUNs (card reader slots, CD+disk sticks) are ASPI LUNs, so old drivers that only scan targets 0-7 (e.g. Adaptec ASPIDISK) still see all disks; `/L` selects this default and is still accepted. Use `/F` for a driver that only looks at LUN 0 |
 | `/ID:name` | ASPI manager name (up to 16 characters, default `EUSBASPI`) |
 | `/M:x` | register access: `F` flat real mode (not with EMM386 etc.), `B` BIOS INT 15h AH=87h; default: one that works |
 | `/T:s` | command timeout in seconds (default 15) |
@@ -77,7 +77,7 @@ Linux (or any system with the tools), GNU make:
 
 `native/msc.c` is USB mass storage in C for [OpenASPI](https://github.com/geosone/OpenASPI)'s native layer, for 32- and 64-bit systems that drive the controllers themselves, such as the GDOS kernel of [GonWare](https://gitea.disconnected-by-peer.at/GonSoft/GonWare). It runs on [eusbcore](https://github.com/geosone/eusbcore), the USB stack (xHCI, EHCI, OHCI, UHCI, hubs) that came out of this C port of `EUSBASPI.SYS` and is included as the submodule `third_party/eusbcore`.
 
-Every mass storage device becomes part of one ASPI adapter `USB`, every LUN one target: Bulk-Only (CBW/CSW, reset recovery, stalled data phases and CSWs) and CBI/CB (ADSC, interrupt status, UFI). Requests run through OpenASPI's shared packet device handling, like ATAPI on AHCI and IDE: REQUEST SENSE as autosense and, for the ATAPI, UFI and SFF-8070i command sets, 12-byte packets and the 6-to-10-byte rules.
+Every mass storage device becomes part of one ASPI adapter `USB`, as one target with its LUNs (with `/F` every LUN one target): Bulk-Only (CBW/CSW, reset recovery, stalled data phases and CSWs) and CBI/CB (ADSC, interrupt status, UFI). Requests run through OpenASPI's shared packet device handling, like ATAPI on AHCI and IDE: REQUEST SENSE as autosense and, for the ATAPI, UFI and SFF-8070i command sets, 12-byte packets and the 6-to-10-byte rules.
 
 The embedding system provides the host services of `openaspi/native/host.h`, adds its controllers with `usb_add()` (EHCI before its companions), calls `usb_enumerate()` and then `eusbaspi_register_storage()`. CMake builds it as `EUSBASPI::native` on top of `EUSBCORE::core` and `OpenASPI::native`; a parent project that already has `EUSBCORE::core` (because other class drivers use it too) keeps its own:
 

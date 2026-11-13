@@ -13,14 +13,16 @@
 ; Build:  nasm -f bin -Isrc/ -o EUSBASPI.SYS src/eusbaspi.asm
 ;
 ; CONFIG.SYS:
-;   DEVICE=EUSBASPI.SYS [/H[:n]] [/ID:name] [/L] [/M:F|B] [/T:s] [/X] [/Q] [/V]
+;   DEVICE=EUSBASPI.SYS [/F] [/H[:n]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
 ;
 ;   /H[:n]  hot plugging: n slots (default 2, ASPI targets 0..n-1) that get
 ;           drive letters from ASPIFDD or ASPIDISK even when empty; sticks can be
 ;           plugged in and out while DOS runs (root ports, see hotplug.inc).
 ;           The driver then stays larger (enumeration code resident).
-;   /L      one ASPI target per USB device, its LUNs (card reader slots)
-;           as ASPI LUNs; by default every LUN is a target of its own.
+;   /F      flat: every LUN an ASPI target of its own (as 0.5 did); by
+;           default one ASPI target per USB device, its LUNs (card reader
+;           slots, CD+disk sticks) as ASPI LUNs.  /L (the default) is
+;           still accepted.
 ;
 ; ASPI targets 0..6 and 8..15 (16 entries); 7 is the adapter.
 ;
@@ -456,6 +458,12 @@ a20_enable:
         jmp     .done
 .bios:  mov     ax, 2401h
         int     15h
+        call    a20_test                ; some BIOSes lack 2401h:
+        jnz     .done                   ; try the fast A20 gate (port 92h)
+        in      al, 92h
+        or      al, 02h
+        and     al, 0FEh                ; never the reset bit
+        out     92h, al
 .done:  popad
         ret
 
@@ -1055,6 +1063,23 @@ srb_exec:
         jc      .dir_done
         mov     byte [s_dir], 1
 .dir_done:
+%ifdef REJECT_OPS
+        ; test builds only: a minimal USB CD firmware, REJECT_OPS opcodes
+        ; end in CHECK CONDITION, ILLEGAL REQUEST, INVALID COMMAND OPCODE
+        mov     al, [cdb_buf]
+        mov     di, .rj_ops
+.rj:    cmp     byte [di], 0
+        je      .rj_no
+        cmp     al, [di]
+        je      .rj_yes
+        inc     di
+        jmp     .rj
+.rj_yes:
+        mov     ax, 2005h
+        jmp     hot_check
+.rj_ops: db     REJECT_OPS, 0
+.rj_no:
+%endif
         mov     byte [s_xlate], XL_NONE
         cmp     byte [dev_trans+bx], TR_EMPTY
         je      hot_empty
@@ -1641,7 +1666,7 @@ opt_method      db      AM_NONE         ; /M: forced access method
 opt_quiet       db      0               ; /Q
 opt_verbose     db      0               ; /V
 opt_xhci        db      0               ; /X: take the xHCI controller over
-opt_lun         db      0               ; /L: one target per device, its LUNs
+opt_lun         db      1               ; one target per device, its LUNs (/F: 0)
 msg_resident    db      '  resident: ', 0
 msg_bytes       db      ' bytes at segment ', 0
 pci_lastbus     db      0
@@ -1733,7 +1758,11 @@ choose_method:
         call    a20_enable
         call    a20_test
         jnz     .a20ok
-        mov     si, msg_no_a20
+        cmp     byte [opt_method], AM_NONE
+        jne     .noa20
+        mov     al, AM_BIOS             ; not forced: INT 15h AH=87h instead
+        jmp     .set
+.noa20: mov     si, msg_no_a20
         stc
         ret
 .a20ok: call    flat_enable
@@ -2199,6 +2228,8 @@ parse_cmdline:
         je      .opt_h
         cmp     al, 'L'
         je      .opt_l
+        cmp     al, 'F'
+        je      .opt_f
 .bad:   push    si
         mov     si, msg_bad_opt
         call    print
@@ -2222,6 +2253,8 @@ parse_cmdline:
 .opt_v: mov     byte [opt_verbose], 1
         jmp     .args
 .opt_l: mov     byte [opt_lun], 1
+        jmp     .args
+.opt_f: mov     byte [opt_lun], 0
         jmp     .args
 .opt_x: mov     byte [opt_xhci], 1
         jmp     .args

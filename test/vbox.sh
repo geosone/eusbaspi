@@ -12,6 +12,9 @@
 #   DEVICES, BATCH  as in test/run.sh
 #   DISKS    USB sticks, one per port (default 1); stick n has USBTEST.TXT
 #            with its number, so the second one says "USB stick 2 read OK"
+#   CDROM=1  also a USB CD-ROM (DVD drive on the USB storage controller,
+#            next port) with CDTEST.TXT ("USB CD read OK")
+#   EXTRA_FILES  more files for the boot floppy (space separated)
 #   TIMEOUT  seconds to wait for 'END OF TEST' (default 120)
 #   KEEP=1   keep the VM (default: unregister and delete it)
 #
@@ -48,6 +51,7 @@ crlf() { tr '|' '\n' | sed 's/$/\r/'; }
 } | crlf > "$OUT/AUTOEXEC.BAT"
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$OUT/EUSBASPI.SYS" \
       "$OUT/ASPITEST.COM" "$OUT/CDSDUMP.COM" ::/
+for f in ${EXTRA_FILES:-}; do mcopy -o -i "$OUT/boot.img" "$f" ::/ || exit 1; done
 
 # USB sticks: 64 MB, one FAT16 partition with USBTEST.TXT
 DISKS=${DISKS:-1}
@@ -77,6 +81,12 @@ for ((n = 1; n <= DISKS; n++)); do
     s=$n; [ "$n" = 1 ] && s=
     VBoxManage storageattach "$VM" --storagectl USB --port $((n - 1)) --device 0 --type hdd --medium "$OUT/usb$s.vdi"
 done
+if [ "${CDROM:-0}" = 1 ]; then
+    mkdir -p "$OUT/cdroot"
+    printf 'USB CD read OK\r\n' > "$OUT/cdroot/CDTEST.TXT"
+    xorriso -outdev "$OUT/cd.iso" -volid USBCD -map "$OUT/cdroot" / -padding 1m -end 2>/dev/null || exit 1
+    VBoxManage storageattach "$VM" --storagectl USB --port "$DISKS" --device 0 --type dvddrive --medium "$OUT/cd.iso" || exit 1
+fi
 
 VBoxManage startvm "$VM" --type headless >/dev/null || exit 1
 for ((i = 0; i < ${TIMEOUT:-120}; i++)); do

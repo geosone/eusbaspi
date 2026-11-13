@@ -96,8 +96,14 @@ drives (SYNCHRONIZE CACHE), then says that the drives can be unplugged.
 Switches
 --------
 
-    DEVICE=EUSBASPI.SYS [/H[:n]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
+    DEVICE=EUSBASPI.SYS [/F] [/H[:n]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
 
+  /F       Flat: every LUN an ASPI target of its own, as in 0.5.
+           By default each USB device is one ASPI target and its LUNs
+           (card reader slots, CD+disk sticks) are ASPI LUNs, so old
+           drivers that scan only targets 0-7 still see every disk.
+           Use /F for a driver that looks only at LUN 0.  /L selects
+           the default and is still accepted.
   /H[:n]   Hot plugging: n drive slots (default 2, ASPI targets 0..n-1)
            that get drive letters from ASPIFDD (or Adaptec's ASPIDISK)
            even when they are empty; setup then also installs ASPIFDD;
