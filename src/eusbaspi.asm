@@ -952,6 +952,9 @@ srb_disk_info:
         xor     ax, ax
         mov     [es:si+SRB_DriveFlags], ax      ; not an INT 13h drive
         mov     [es:si+SRB_Heads], ax
+%ifdef USB_BUILD
+        call    bd_disk_info                    ; unless the BIOS has it
+%endif
         mov     byte [es:si+SRB_Status], SS_COMP
 .out:   ret
 
@@ -1616,6 +1619,7 @@ auto_sense:
 
 %ifdef USB_BUILD
 %include "usb.inc"
+%include "biosdisk.inc"
 %endif
 
 ;-----------------------------------------------------------------------------
@@ -1943,6 +1947,7 @@ print_dec:                              ; AX
 
 %ifdef USB_BUILD
 %include "usbinit.inc"
+%include "biosinit.inc"
 %endif
 
 ;-----------------------------------------------------------------------------
@@ -2052,6 +2057,9 @@ init:
         jnc     .method_ok
         jmp     init_fail
 .method_ok:
+%ifdef USB_BUILD
+        call    bd_scan_bios            ; the BIOS's disks, before we take over
+%endif
         movzx   cx, byte [hot_slots]    ; hot plug: empty slots first
         jcxz    .noslots
         xor     bx, bx
@@ -2071,6 +2079,9 @@ init:
         mov     si, msg_no_dev
         jmp     init_fail
 .found:
+%ifdef USB_BUILD
+        call    bd_match                ; BIOS disks among ours: INT 13h
+%endif
         les     bx, [req_ptr]           ; resident: up to the last DMA page used
         mov     ax, [ud_base]
         add     ax, [ud_next]

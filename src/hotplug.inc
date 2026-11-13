@@ -228,6 +228,7 @@ hot_remove_port:
         mov     byte [dev_trans+di], TR_NONE
 .slot:  mov     byte [dev_type+di], 0
         mov     byte [dev_ua+di], 0
+        mov     byte [dev_bios+di], 0FFh        ; a BIOS drive is gone
 .ntgt:  inc     di
         jmp     .tgt
 .drop:  push    bx

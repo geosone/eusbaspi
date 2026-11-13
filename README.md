@@ -7,6 +7,7 @@
 - up to 16 USB devices (hubs included; a USB 3 hub counts twice) as ASPI targets 0-6 and 8-15 (7 is the adapter); xHCI keeps the device contexts in XMS, without an XMS driver it takes up to 8 devices. Adaptec's `ASPIDISK.SYS` only looks at targets 0-7, the OpenASPI drivers at all of them
 - Bulk-Only and CBI devices
 - hot plugging (`/H`): sticks can be changed while DOS runs
+- USB disks the BIOS offers as INT 13h hard disks are taken over: their drive letters keep working
 - Windows 3.x DOS boxes (with `EUSBVXD.386` for OHCI, EHCI and xHCI)
 - together with other ASPI managers ([AHCIASPI](https://github.com/geosone/ahciaspi), ASPI8DOS, ...): EUSBASPI chains to a manager loaded before it
 
@@ -31,7 +32,7 @@ With EUSBASPI already loaded, `ASPISCAN.COM` finds ZIP/LS-120 and tape drives an
 
 `INSTALL /U` in `C:\OPENASPI\EUSBASPI` removes the installation again; `C:\OPENASPI` stays while AHCIASPI or OpenASPI are still there.
 
-Disable "USB legacy storage" (USB mass storage emulation) in the BIOS setup if possible: otherwise the BIOS keeps driving the controller.
+Disable "USB legacy storage" (USB mass storage emulation) in the BIOS setup if possible: otherwise the BIOS keeps driving the controller. A USB disk the BIOS already offers as a hard disk (a stick plugged in at boot, DOS has it as `C:` or later) is taken over: EUSBASPI finds it by its size and sector 0 and answers INT 13h for it from then on, so its drive letter keeps working and ASPI disk drivers give it no second one. For that EUSBASPI must be loaded low (`DEVICE=`, not `DEVICEHIGH=`): the BIOS can't read into upper memory.
 
 By hand, `CONFIG.SYS`:
 

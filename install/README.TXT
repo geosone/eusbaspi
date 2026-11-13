@@ -65,6 +65,12 @@ SYSTEM.INI of Windows 3.x, section [386Enh]:
 
 Disable "USB legacy storage" (USB mass storage emulation) in the BIOS
 setup if possible: otherwise the BIOS keeps driving the controller.
+A USB disk the BIOS already offers as a hard disk (a stick plugged in
+at boot, DOS has it as C: or later) is taken over: EUSBASPI finds it by
+its size and sector 0 and answers INT 13h for it from then on, so its
+drive letter keeps working and ASPI disk drivers give it no second one.
+For that EUSBASPI must be loaded low (DEVICE=, not DEVICEHIGH=): the
+BIOS can't read into upper memory.
 
 
 Unplugging USB drives: USBSYNC
