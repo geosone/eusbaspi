@@ -39,7 +39,7 @@
 %include "defs.inc"
 %include "aspi.inc"
 
-%define VERSION_STR '0.6'
+%define VERSION_STR '0.7'
 
 NPRD            equ     8               ; PRDT entries per command
 BOUNCE_SIZE     equ     800h            ; bounce buffer (2 KB, 2 KB aligned)
@@ -204,6 +204,12 @@ dev_pnum        times MAX_DEV db 0
 dev_trans       times MAX_DEV db 0      ; TR_AHCI / TR_IDE
 dev_sel         times MAX_DEV db 0      ; IDE: A0h master, B0h slave
 dev_ua          times MAX_DEV db 0      ; unit attention pending (hot plug)
+dev_quirk       times MAX_DEV db 0      ; quirk_ops bits the device never answered
+; optional CD commands that some USB CD firmware (SMI 3267/3268, IS902E mass
+; production tools) never answers: they get a short timeout, and after one
+; timeout EUSBASPI answers them itself with ILLEGAL REQUEST (8 entries)
+quirk_ops       db      42h, 44h, 46h, 4Ah, 4Bh, 4Eh, 51h, 0BDh
+QUIRK_TICKS     equ     3 * 182 / 10    ; 3 s
 dev_tgt         times MAX_DEV db 0      ; ASPI target and LUN of the entry
 dev_lun         times MAX_DEV db 0      ;   (without /L: target = entry)
 
@@ -243,6 +249,7 @@ s_len           dd      0               ; data length from the SRB
 s_buf           dd      0               ; data buffer (far pointer)
 s_dir           db      0               ; 0 none, 1 in, 2 out
 s_xlate         db      0
+s_qbit          db      0               ; quirk_ops bit of this command
 s_blen          dw      0               ; bytes used in the bounce buffer
 s_alloc6        dw      0               ; MODE SENSE(6) allocation length
 s_msel_bdonly   db      0               ; MODE SELECT(6) without mode pages
@@ -1080,6 +1087,24 @@ srb_exec:
 .rj_ops: db     REJECT_OPS, 0
 .rj_no:
 %endif
+        mov     byte [s_qbit], 0        ; an optional CD command?
+        cmp     byte [dev_type+bx], 5
+        jne     .noq
+        mov     al, [cdb_buf]
+        mov     di, quirk_ops
+        mov     ah, 1
+.q:     cmp     al, [di]
+        je      .qhit
+        inc     di
+        shl     ah, 1
+        jnz     .q
+        jmp     .noq
+.qhit:  mov     [s_qbit], ah
+        test    [dev_quirk+bx], ah      ; it hung before: answer it here
+        jz      .noq
+        mov     ax, 2005h               ; ILLEGAL REQUEST, INVALID OPCODE
+        jmp     hot_check
+.noq:
         mov     byte [s_xlate], XL_NONE
         cmp     byte [dev_trans+bx], TR_EMPTY
         je      hot_empty
@@ -1114,7 +1139,14 @@ srb_exec:
         jne     .rd
         inc     al
 .rd:    mov     [x_write], al
-        call    usb_scsi
+        push    dword [tmo_ticks]
+        cmp     byte [s_qbit], 0
+        je      .tmo
+        cmp     dword [tmo_ticks], QUIRK_TICKS
+        jbe     .tmo
+        mov     dword [tmo_ticks], QUIRK_TICKS
+.tmo:   call    usb_scsi
+        pop     dword [tmo_ticks]
 
 .done_exec:
         les     si, [srb_ptr]
@@ -1124,7 +1156,16 @@ srb_exec:
         mov     ah, [x_over]
         mov     [s_over], ah
         pop     eax
-        cmp     al, XR_OK
+        cmp     al, XR_TIMEOUT          ; an optional CD command hung: from
+        jne     .noqt                   ; now on it is answered here
+        cmp     byte [s_qbit], 0
+        je      .noqt
+        mov     bx, [s_dev]
+        mov     ah, [s_qbit]
+        or      [dev_quirk+bx], ah
+        mov     ax, 2005h
+        jmp     hot_check
+.noqt:  cmp     al, XR_OK
         jne     .failed
         cmp     byte [s_xlate], XL_MODESENSE
         jne     .nomsb
@@ -1805,10 +1846,10 @@ print_dev:
         call    print
         movzx   ax, byte [dev_tgt+bx]
         call    print_dec
-        cmp     byte [opt_lun], 0       ; /L: target:LUN
+        cmp     byte [opt_lun], 0       ; LUN mode: "ID t:Lun l"
         je      .nolun
-        mov     al, ':'
-        call    putc
+        mov     si, msg_lun
+        call    print
         movzx   ax, byte [dev_lun+bx]
         call    print_dec
 .nolun: cmp     byte [dev_trans+bx], TR_IDE
@@ -2008,6 +2049,7 @@ msg_crlf        db      13, 10, 0
 msg_port        db      '  port ', 0
 msg_id          db      '  ID ', 0
 msg_colon       db      ': ', 0
+msg_lun         db      ':Lun ', 0
 msg_ide         db      '  IDE ', 0
 msg_usb_port    db      '  USB port ', 0
 msg_chain1      db      'Chained to ASPI manager "', 0

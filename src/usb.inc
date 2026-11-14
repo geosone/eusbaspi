@@ -1979,9 +1979,15 @@ usb_scsi:
         mov     byte [x_res], XR_CHECK  ; sense data via REQUEST SENSE
         jmp     .out
 .phase: call    usb_reset_recovery
+        mov     byte [x_res], XR_HBA
+        jmp     .out
 .fail:  mov     byte [x_res], XR_HBA
         cmp     al, US_TIMEOUT
         jne     .out
+        ; the device went silent (some USB CD firmware never answers READ
+        ; SUB-CHANNEL and NAKs for ever): reset recovery, so that it takes
+        ; the next command
+        call    usb_reset_recovery
         mov     byte [x_res], XR_TIMEOUT
 .out:   pop     es
         popad

@@ -57,7 +57,7 @@ DOS, SMARTDRV and Windows keep written data in caches, and many sticks have a wr
 | `/F` | flat numbering: every LUN is an ASPI target of its own, as in 0.5. By default each USB device is one ASPI target and its LUNs (card reader slots, CD+disk sticks) are ASPI LUNs, so old drivers that only scan targets 0-7 (e.g. Adaptec ASPIDISK) still see all disks; `/L` selects this default and is still accepted. Use `/F` for a driver that only looks at LUN 0 |
 | `/ID:name` | ASPI manager name (up to 16 characters, default `EUSBASPI`) |
 | `/M:x` | register access: `F` flat real mode (not with EMM386 etc.), `B` BIOS INT 15h AH=87h; default: one that works |
-| `/T:s` | command timeout in seconds (default 15) |
+| `/T:s` | command timeout in seconds (default 15). Optional CD commands (READ SUB-CHANNEL, READ HEADER, GET CONFIGURATION, GET EVENT STATUS, PAUSE/RESUME, STOP PLAY, READ DISC INFORMATION, MECHANISM STATUS) get at most 3 s: some USB CD firmware (SMI 3267/3268, IS902E) never answers them. After such a timeout the device is reset and EUSBASPI answers that command itself with ILLEGAL REQUEST until the device is unplugged |
 | `/X` | also take over xHCI (USB 3.x) controllers |
 | `/Q`, `/V` | quiet, verbose |
 

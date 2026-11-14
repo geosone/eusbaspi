@@ -2458,6 +2458,7 @@ usb_add_target:
         mov     [dev_port+di], cx
         mov     byte [dev_trans+bx], TR_USB
         mov     byte [dev_flags+bx], DF_CDB16
+        mov     byte [dev_quirk+bx], 0
         mov     al, [init_port]
         mov     [dev_pnum+bx], al
         mov     byte [dev_type+bx], 1Fh
