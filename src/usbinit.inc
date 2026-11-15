@@ -2400,6 +2400,7 @@ new_lun_target:
         ret
 
 l_tgt           db      0               ; /L: target of the device's LUN 0
+hot_want        db      0FFh            ; /H: slot for a re-enumerated device
 
 ; BX = the next new target: target 7 is the adapter, it is left out
 next_target:
@@ -2434,7 +2435,12 @@ usb_add_target:
 .lun0:  movzx   bx, byte [dev_count]
         cmp     byte [hot_slots], 0     ; hot plug: first empty slot
         je      .new
-        xor     bx, bx
+        movzx   bx, byte [hot_want]     ; a port reset: the slot it had
+        cmp     bl, [dev_count]
+        jae     .first
+        cmp     byte [dev_trans+bx], TR_EMPTY
+        je      .took
+.first: xor     bx, bx
 .slot:  cmp     bl, [dev_count]
         jae     .new
         cmp     byte [dev_trans+bx], TR_EMPTY
@@ -2488,9 +2494,13 @@ usb_add_target:
 .out:   ret
 
 ; does target BX take MODE SENSE(6)?  If it rejects the opcode (sense
-; 05/20, typical for ATAPI devices behind a USB bridge) MODE SENSE/SELECT(6)
-; are translated to their 10 byte forms
+; 05/20, typical for ATAPI devices behind a USB bridge) or never answers it,
+; MODE SENSE/SELECT(6) are translated to their 10 byte forms.  CD/DVD drives
+; get the 10 byte forms without asking, as from Linux and Windows: some USB
+; CD firmware (SMI 3255/3257) hangs on the 6 byte ones
 probe_mode6:
+        cmp     byte [dev_type+bx], 5
+        je      .set
         call    .clear
         mov     byte [cdb_buf], SCSI_MODE_SENSE6
         mov     byte [cdb_buf+2], 3Fh
@@ -2498,6 +2508,8 @@ probe_mode6:
         mov     ecx, 4
         xor     dl, dl
         call    packet_bounce
+        cmp     al, XR_TIMEOUT
+        je      .set
         cmp     al, XR_CHECK
         jne     .out
         call    .clear
@@ -2515,7 +2527,7 @@ probe_mode6:
         jne     .out
         cmp     byte [si+12], 20h       ; invalid command operation code
         jne     .out
-        or      byte [dev_flags+bx], DF_MS10
+.set:   or      byte [dev_flags+bx], DF_MS10
 .out:   ret
 .clear: xor     eax, eax
         mov     [cdb_buf], eax

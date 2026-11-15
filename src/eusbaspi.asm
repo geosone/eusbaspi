@@ -39,7 +39,7 @@
 %include "defs.inc"
 %include "aspi.inc"
 
-%define VERSION_STR '0.7'
+%define VERSION_STR '0.8'
 
 NPRD            equ     8               ; PRDT entries per command
 BOUNCE_SIZE     equ     800h            ; bounce buffer (2 KB, 2 KB aligned)
@@ -250,6 +250,7 @@ s_buf           dd      0               ; data buffer (far pointer)
 s_dir           db      0               ; 0 none, 1 in, 2 out
 s_xlate         db      0
 s_qbit          db      0               ; quirk_ops bit of this command
+s_sense         db      0, 0            ; sense key, ASC of the last CHECK
 s_blen          dw      0               ; bytes used in the bounce buffer
 s_alloc6        dw      0               ; MODE SENSE(6) allocation length
 s_msel_bdonly   db      0               ; MODE SELECT(6) without mode pages
@@ -1102,8 +1103,7 @@ srb_exec:
 .qhit:  mov     [s_qbit], ah
         test    [dev_quirk+bx], ah      ; it hung before: answer it here
         jz      .noq
-        mov     ax, 2005h               ; ILLEGAL REQUEST, INVALID OPCODE
-        jmp     hot_check
+        jmp     quirk_local
 .noq:
         mov     byte [s_xlate], XL_NONE
         cmp     byte [dev_trans+bx], TR_EMPTY
@@ -1113,6 +1113,32 @@ srb_exec:
 .noua:
         call    translate_cdb
         jc      .invalid
+        ; a CD drive is only asked for 2048 byte blocks (ASPI CD drivers do
+        ; that): answered here.  ATAPI drives reject it anyway (see .failed),
+        ; some USB CD firmware (SMI 3255/3257) hangs on it.
+        cmp     byte [s_xlate], XL_MODESELECT
+        jne     .nosel
+        cmp     byte [dev_type+bx], 5
+        jne     .nosel
+        cmp     byte [s_msel_bdonly], 0
+        je      .nosel
+        mov     di, [bounce_ptr]
+        cmp     byte [di+7], 0          ; no block descriptor at all
+        je      .selok
+        cmp     byte [di+7], 8
+        jne     .nosel
+        cmp     word [s_blen], 16
+        jb      .nosel
+        cmp     word [di+13], 0800h     ; block length 00 08 00 (2048)
+        jne     .nosel
+        cmp     byte [di+15], 0
+        jne     .nosel
+.selok: mov     eax, [s_len]
+        mov     [s_xfer], eax
+        mov     byte [s_over], 0
+        les     si, [srb_ptr]
+        jmp     .good
+.nosel:
         ; the USB transport moves the data through its own page: the
         ; client buffer, or the bounce buffer for translated MODE SENSE /
         ; MODE SELECT
@@ -1156,15 +1182,27 @@ srb_exec:
         mov     ah, [x_over]
         mov     [s_over], ah
         pop     eax
-        cmp     al, XR_TIMEOUT          ; an optional CD command hung: from
-        jne     .noqt                   ; now on it is answered here
-        cmp     byte [s_qbit], 0
-        je      .noqt
+        cmp     al, XR_TIMEOUT
+        jne     .noqt
         mov     bx, [s_dev]
+        mov     ah, [es:si+SRB_CDB]     ; MODE SENSE/SELECT(6) hung: use
+        cmp     ah, SCSI_MODE_SENSE6    ; the 10 byte forms from now on
+        je      .ms10
+        cmp     ah, 15h
+        jne     .noms
+.ms10:  or      byte [dev_flags+bx], DF_MS10
+.noms:  cmp     byte [dev_type+bx], 5   ; a CD drive went silent: wake it
+        jne     .nowk
+        push    ax
+        call    cd_wake
+        pop     ax
+        les     si, [srb_ptr]
+        mov     bx, [s_dev]
+.nowk:  cmp     byte [s_qbit], 0        ; an optional CD command hung: from
+        je      .noqt                   ; now on it is answered here
         mov     ah, [s_qbit]
         or      [dev_quirk+bx], ah
-        mov     ax, 2005h
-        jmp     hot_check
+        jmp     quirk_local
 .noqt:  cmp     al, XR_OK
         jne     .failed
         cmp     byte [s_xlate], XL_MODESENSE
@@ -1192,6 +1230,18 @@ srb_exec:
 .check:
         mov     byte [es:si+SRB_TargStat], STATUS_CHKCOND
         call    auto_sense
+        cmp     byte [s_qbit], 0        ; an optional CD command failed
+        je      .chk_out
+        mov     bx, [s_dev]
+        cmp     word [s_sense], 2005h   ; ILLEGAL REQUEST, INVALID OPCODE:
+        jne     .settle                 ; answered here from now on
+        mov     ah, [s_qbit]
+        or      [dev_quirk+bx], ah
+        call    cd_wake
+        jmp     quirk_local
+.settle:
+        call    cd_wake                 ; some firmware (IS902E) reads wrong
+.chk_out:                               ; data after it until a command works
         les     si, [srb_ptr]
         jmp     .err
 .hba_err:
@@ -1279,6 +1329,38 @@ hot_sense_data:
         ; fall through
 
 ; copy CX bytes at DS:SI into the client buffer (at most its size), done
+; an optional CD command the drive cannot do, answered here: READ
+; SUB-CHANNEL (current position) as by an idle drive with a data disc (no
+; audio status, track 1, position 0; some ASPI CD drivers use the position
+; even when the command failed), everything else ILLEGAL REQUEST
+quirk_local:
+        les     si, [srb_ptr]
+        mov     ax, 2005h               ; ILLEGAL REQUEST, INVALID OPCODE
+        cmp     byte [es:si+SRB_CDB], 42h
+        jne     .chk
+        mov     ax, 2405h               ; INVALID FIELD IN CDB
+        mov     cx, 4                   ; SubQ 0: the header only
+        mov     byte [subq_buf+3], 0
+        test    byte [es:si+SRB_CDB+2], 40h
+        jz      .data
+        cmp     byte [es:si+SRB_CDB+3], 1
+        jne     .chk
+        mov     byte [subq_buf+3], 12
+        mov     cx, 16
+        mov     byte [subq_buf+10], 0   ; absolute address: LBA 0
+        test    byte [es:si+SRB_CDB+1], 02h
+        jz      .data
+        mov     byte [subq_buf+10], 2   ; MSF 00:02:00
+.data:  mov     byte [es:si+SRB_HaStat], HASTAT_OK
+        mov     byte [es:si+SRB_TargStat], 0
+        mov     si, subq_buf
+        jmp     hot_data
+.chk:   jmp     hot_check
+
+subq_buf        db      0, 15h, 0, 12           ; no current audio status
+                db      01h, 14h, 1, 1          ; position, data track 1/1
+                db      0, 0, 0, 0, 0, 0, 0, 0  ; absolute, relative address
+
 hot_data:
         movzx   ecx, cx
         cmp     ecx, [s_len]
@@ -1633,19 +1715,20 @@ modesense_back:
 ; Automatic REQUEST SENSE after CHECK CONDITION for the SRB at [srb_ptr]
 ;-----------------------------------------------------------------------------
 auto_sense:
-        les     si, [srb_ptr]
-        movzx   cx, byte [es:si+SRB_SenseLen]
-        test    cx, cx
-        jz      .out
+        mov     word [s_sense], 0
         mov     ax, [x_tfd]             ; keep the error register
         push    ax
-        xor     eax, eax
-        mov     [cdb_buf], eax
-        mov     [cdb_buf+4], eax
-        mov     [cdb_buf+8], eax
-        mov     [cdb_buf+12], eax
+        call    cdb_clear
         mov     byte [cdb_buf], SCSI_REQUEST_SENSE
-        cmp     cx, 252
+        ; always at least 18 bytes, even if the client takes none: a
+        ; bulk-only device holds its error state until REQUEST SENSE, and
+        ; some USB CD firmware fails the next command otherwise (as Linux)
+        les     si, [srb_ptr]
+        movzx   cx, byte [es:si+SRB_SenseLen]
+        cmp     cx, 18
+        jae     .big
+        mov     cx, 18
+.big:   cmp     cx, 252
         jbe     .alloc
         mov     cx, 252
 .alloc: mov     [cdb_buf+4], cl
@@ -1654,8 +1737,17 @@ auto_sense:
         mov     bx, [s_dev]
         call    packet_bounce
         pop     dx                      ; DH = error register
-        les     si, [srb_ptr]
+        cmp     al, XR_OK
+        jne     .nokey
+        mov     si, [bounce_ptr]
+        mov     ah, [si+2]
+        and     ah, 0Fh
+        mov     [s_sense], ah
+        mov     ah, [si+12]
+        mov     [s_sense+1], ah
+.nokey: les     si, [srb_ptr]
         movzx   cx, byte [es:si+SRB_SenseLen]
+        jcxz    .out
         movzx   di, byte [es:si+SRB_CDBLen]
         add     di, si
         add     di, SRB_CDB
@@ -1682,6 +1774,63 @@ auto_sense:
         jb      .out
         mov     byte [es:di+7], 0Ah
 .out:   ret
+
+cdb_clear:
+        push    eax
+        xor     eax, eax
+        mov     [cdb_buf], eax
+        mov     [cdb_buf+4], eax
+        mov     [cdb_buf+8], eax
+        mov     [cdb_buf+12], eax
+        pop     eax
+        ret
+
+; CD drive [s_dev] hung or failed a command: TEST UNIT READY with at most
+; 3 s, up to 3 times (usb_scsi resets the device after each timeout).  Some
+; USB CD firmware (SMI 3267/3268) needs a second reset, other (IS902E)
+; a command that works before it reads right again.  A unit attention the
+; TEST UNIT READY gets is kept for the client (dev_ua).
+cd_wake:
+        push    dword [tmo_ticks]
+        cmp     dword [tmo_ticks], QUIRK_TICKS
+        jbe     .t
+        mov     dword [tmo_ticks], QUIRK_TICKS
+.t:     mov     cx, 3
+.try:   push    cx
+        call    cdb_clear               ; TEST UNIT READY
+        xor     ecx, ecx
+        xor     dl, dl
+        mov     bx, [s_dev]
+        call    packet_bounce
+        pop     cx
+        cmp     al, XR_TIMEOUT
+        jne     .ans
+        loop    .try
+%ifdef USB_BUILD
+        cmp     byte [hot_slots], 0     ; /H: reset its USB port
+        je      .out
+        call    usb_replug
+%endif
+        jmp     .out
+.ans:   cmp     al, XR_CHECK
+        jne     .out
+        call    cdb_clear
+        mov     byte [cdb_buf], SCSI_REQUEST_SENSE
+        mov     byte [cdb_buf+4], 18
+        mov     ecx, 18
+        xor     dl, dl
+        mov     bx, [s_dev]
+        call    packet_bounce
+        cmp     al, XR_OK
+        jne     .out
+        mov     si, [bounce_ptr]
+        mov     al, [si+2]
+        and     al, 0Fh
+        cmp     al, 6                   ; UNIT ATTENTION
+        jne     .out
+        mov     byte [dev_ua+bx], 1
+.out:   pop     dword [tmo_ticks]
+        ret
 
 %ifdef USB_BUILD
 %include "usb.inc"

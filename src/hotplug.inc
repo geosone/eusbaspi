@@ -104,6 +104,38 @@ hot_check_port:
         inc     byte [hot_npend]
 .out:   ret
 
+; target [s_dev] stays silent after reset recovery: reset its root port and
+; enumerate what is behind it again, as if it had been unplugged and
+; plugged in (Linux, too, resets the port first).  The target keeps its
+; slot, and its next command gets UNIT ATTENTION.
+usb_replug:
+        pushad
+        push    es
+        mov     si, [s_dev]
+        mov     al, [dev_trans+si]
+        cmp     al, TR_USB
+        jne     .out
+        add     si, si
+        movzx   bx, byte [dev_port+si]  ; USB device
+        mov     al, [usbd_hc+bx]
+        mov     [init_hc], al
+        movzx   ax, byte [usbd_rootport+bx]
+        mov     [init_port], ax
+        push    ax
+        mov     al, [init_hc]
+        call    hc_select
+        call    hot_remove_port
+        mov     ax, [s_dev]
+        mov     [hot_want], al
+        call    hot_add_port
+        mov     byte [hot_want], 0FFh
+        pop     ax
+        mov     [init_port], ax
+        call    hot_csc                 ; the reset is no new device
+.out:   pop     es
+        popad
+        ret
+
 ; reset and enumerate root port [init_port] of controller [init_hc]
 hot_add_port:
         mov     al, [init_hc]

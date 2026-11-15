@@ -1,4 +1,4 @@
-EUSBASPI 0.7 - ASPI manager for USB mass storage
+EUSBASPI 0.8 - ASPI manager for USB mass storage
 ================================================
 
 EUSBASPI.SYS is an ASPI manager (device SCSIMGR$) for DOS.  It makes USB
@@ -118,7 +118,9 @@ Switches
            Optional CD commands (READ SUB-CHANNEL and the like) get at
            most 3 s: some USB CD firmware never answers them.  After
            such a timeout EUSBASPI resets the device and answers that
-           command itself with ILLEGAL REQUEST.
+           command itself with ILLEGAL REQUEST.  A CD drive that went
+           silent is woken with TEST UNIT READY and further resets;
+           with /H, a USB port reset and enumeration follow if needed.
   /X       Also take over xHCI (USB 3.x) controllers.
   /Q       Quiet: no messages at boot time.
   /V       Verbose: show the controllers, ports and devices.
