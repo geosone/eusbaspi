@@ -175,6 +175,131 @@ usb_init_type:
         jmp     .hc
 .done:  ret
 
+;-----------------------------------------------------------------------------
+; usb_stop_all: stop and reset every controller and give its XMS back.  For
+; the "not installed" exit: the schedules, the OHCI HCCA and the xHCI rings
+; live in our segment, which DOS takes back, and a running OHCI writes its
+; frame number into the HCCA every millisecond.
+;-----------------------------------------------------------------------------
+usb_stop_all:
+        pushad
+        xor     bx, bx
+.hc:    cmp     bl, [usb_hc_count]
+        jae     .xms
+        push    bx
+        mov     al, bl
+        call    hc_select
+        mov     al, [hc_type+bx]
+        cmp     al, HC_OHCI
+        je      .ohci
+        cmp     al, HC_EHCI
+        je      .ehci
+        cmp     al, HC_UHCI
+        je      .uhci
+        cmp     al, HC_XHCI
+        jne     .next
+
+        cmp     word [xh_op], 0         ; xHCI: stop, wait for HCHalted,
+        je      .next                   ; reset (not set up: leave it)
+        mov     ax, XO_USBCMD
+        call    xop_rd
+        and     al, ~1
+        mov     ecx, eax
+        mov     ax, XO_USBCMD
+        call    xop_wr
+        mov     ax, [xh_op]
+        add     ax, XO_USBSTS
+        mov     ecx, 1
+        mov     edx, ecx
+        mov     bx, 3
+        call    wait_reg
+        mov     ecx, 2
+        mov     ax, XO_USBCMD
+        call    xop_wr
+        mov     ax, [xh_op]
+        add     ax, XO_USBCMD
+        mov     ecx, 2
+        xor     edx, edx
+        mov     bx, 19
+        call    wait_reg
+        jmp     .next
+
+.ohci:  mov     ecx, OCS_HCR            ; OHCI: reset -> USBSUSPEND
+        mov     ax, OHCI_CMDSTATUS
+        call    reg_wr
+        mov     ax, OHCI_CMDSTATUS
+        mov     ecx, OCS_HCR
+        xor     edx, edx
+        mov     bx, 2
+        call    wait_reg
+        xor     ecx, ecx                ; and no HCCA
+        mov     ax, OHCI_HCCA
+        call    reg_wr
+        jmp     .next
+
+.ehci:  mov     ax, EHCI_USBCMD         ; EHCI: stop, ports back to the
+        call    reg_rd                  ; companions, reset
+        mov     ecx, eax
+        and     ecx, ~(EC_RS | EC_ASE)
+        mov     ax, EHCI_USBCMD
+        call    reg_wr
+        mov     ax, EHCI_USBSTS
+        mov     ecx, ES_HALTED
+        mov     edx, ecx
+        mov     bx, 3
+        call    wait_reg
+        xor     ecx, ecx
+        mov     ax, EHCI_CONFIGFLAG
+        call    reg_wr
+        mov     ecx, EC_HCRESET
+        mov     ax, EHCI_USBCMD
+        call    reg_wr
+        mov     ax, EHCI_USBCMD
+        mov     ecx, EC_HCRESET
+        xor     edx, edx
+        mov     bx, 5
+        call    wait_reg
+        jmp     .next
+
+.uhci:  mov     dx, UHCI_USBCMD         ; UHCI: stop, reset, no frame list
+        call    uhci_port_addr
+        xor     ax, ax
+        out     dx, ax
+        mov     bx, 1
+        call    delay_ticks
+        mov     ax, UC_HCRESET
+        out     dx, ax
+        mov     bx, 1
+        call    delay_ticks
+        xor     ax, ax
+        out     dx, ax
+        mov     dx, UHCI_FRBASE
+        call    uhci_port_addr
+        xor     eax, eax
+        out     dx, eax
+
+.next:  pop     bx
+        inc     bx
+        jmp     .hc
+
+.xms:   cmp     dword [xms_entry], 0
+        je      .out
+        mov     dx, [xh_xms]            ; xHCI scratchpad buffers
+        call    .free
+        mov     dx, [xh_ctx_xh]         ; xHCI device contexts
+        call    .free
+.out:   popad
+        ret
+.free:  or      dx, dx
+        jz      .fret
+        push    dx
+        mov     ah, 0Dh                 ; unlock
+        call    far [xms_entry]
+        pop     dx
+        mov     ah, 0Ah                 ; free
+        call    far [xms_entry]
+.fret:  ret
+
 ; USB controller at [pci_bdf], DL = prog-if
 usb_found_hc:
         push    bx
@@ -1058,6 +1183,7 @@ xh_ctx_xms:
 .free:  mov     dx, [xh_ctx_xh]
         mov     ah, 0Ah
         call    far [xms_entry]
+        mov     word [xh_ctx_xh], 0
 .out:   popad
         ret
 

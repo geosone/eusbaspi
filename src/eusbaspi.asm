@@ -39,7 +39,7 @@
 %include "defs.inc"
 %include "aspi.inc"
 
-%define VERSION_STR '0.8'
+%define VERSION_STR '0.9'
 
 NPRD            equ     8               ; PRDT entries per command
 BOUNCE_SIZE     equ     800h            ; bounce buffer (2 KB, 2 KB aligned)
@@ -2296,6 +2296,7 @@ init:
 .scanned:
         cmp     byte [dev_count], 0
         jne     .found
+        call    usb_stop_all            ; DOS takes our DMA area back
         mov     si, msg_no_dev
         jmp     init_fail
 .found:
