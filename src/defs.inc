@@ -18,6 +18,7 @@ SCSI_INQUIRY            equ     12h
 SCSI_MODE_SELECT6       equ     15h
 SCSI_MODE_SENSE6        equ     1Ah
 SCSI_SEEK10             equ     2Bh
+SCSI_READ_TOC           equ     43h
 SCSI_MODE_SELECT10      equ     55h
 SCSI_MODE_SENSE10       equ     5Ah
 SENSE_ILLEGAL_REQUEST   equ     05h

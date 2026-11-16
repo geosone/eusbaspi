@@ -1716,11 +1716,15 @@ usb_clear_halt:
         ret
 
 ; mass storage reset recovery for device BX: bulk-only reset, or the CBI
-; command block reset (SEND DIAGNOSTIC 1D 04 FF FF ...); then clear halts
+; command block reset (SEND DIAGNOSTIC 1D 04 FF FF ...); then clear halts.
+; A device that does not take the bulk-only reset is not asked to clear its
+; halts either (each may take seconds, as under VMware): rr_failed is set,
+; and only a port reset helps (cd_wake with /H), as Linux does.
 usb_reset_recovery:
         push    cx
         push    dx
         push    si
+        mov     byte [rr_failed], 0
         cmp     byte [usbd_proto+bx], 50h
         je      .bot
         push    di
@@ -1740,16 +1744,24 @@ usb_reset_recovery:
         movzx   cx, byte [usbd_iface+bx]
         xor     si, si
         call    usb_control
+%ifdef SIM_RRFAIL
+        mov     al, US_OK + 1           ; test build: the drive ignores it
+%endif
+        cmp     al, US_OK
+        je      .halts
+        mov     byte [rr_failed], 1
+        jmp     .done
 .halts:
         mov     al, [usbd_epin+bx]
         or      al, 80h
         call    usb_clear_halt
         mov     al, [usbd_epout+bx]
         call    usb_clear_halt
-        pop     si
+.done:  pop     si
         pop     dx
         pop     cx
         ret
+rr_failed       db      0               ; the last bulk-only reset failed
 
 ; bulk transfer on device BX: AL = 1 for IN, EDX = physical buffer, CX = len
 ; -> AL = US_*, ux_actual

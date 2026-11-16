@@ -7,7 +7,8 @@
 ;
 ; For every target: INQUIRY, TEST UNIT READY, READ CAPACITY, a sector read
 ; with READ(10) and READ(6), MODE SENSE(6), direction "auto" and an odd
-; buffer address.  Every check prints OK or FAIL.
+; buffer address.  CD drives: READ TOC in LBA and MSF, the session info
+; in both forms, the lead-out against READ CAPACITY.  Every check prints OK or FAIL.
 ;=============================================================================
         cpu     486
         bits    16
@@ -326,6 +327,10 @@ test_target:
         call    report_zf
 
 .modesense:
+        cmp     byte [devtype], 5
+        jne     .ms
+        call    toc_tests
+.ms:
         ; MODE SENSE(6), all pages; devices that do not know page 3Fh
         ; (ILLEGAL REQUEST / invalid field) are asked for page 01h
         mov     byte [cdb_msense6+3], 3Fh
@@ -469,6 +474,55 @@ test_extras:
         mov     si, msg_t_link
         call    report_zf
         ret
+
+;-----------------------------------------------------------------------------
+; READ TOC of a CD (track 1 of a data CD starts at LBA 0, 00:02:00 MSF)
+;-----------------------------------------------------------------------------
+toc_tests:
+        mov     di, cdb_toc_lba
+        mov     si, msg_t_toc
+        xor     edx, edx
+        call    .one
+        mov     di, cdb_toc_msf
+        mov     si, msg_t_tocmsf
+        mov     edx, 00020000h          ; 00 00 02 00 as read (little endian dword)
+        call    .one
+        mov     di, cdb_toc_ses
+        mov     si, msg_t_tocses
+        xor     edx, edx
+        call    .one
+        mov     di, cdb_toc_ses2
+        mov     si, msg_t_tocses2
+        xor     edx, edx
+        call    .one
+        mov     di, cdb_toc_lead
+        mov     si, msg_t_toclead
+        mov     edx, [blocks]           ; lead-out = READ CAPACITY's last + 1
+        bswap   edx
+        ; fall through
+; DI = CDB, SI = name, EDX = the address expected at buf+8 (as stored)
+.one:   push    si
+        push    edx
+        mov     dword [buf+8], 0FFFFFFFFh
+        mov     ecx, 12
+        mov     bx, buf
+        mov     al, SRB_DIR_IN
+        call    scsi
+        pop     edx
+        pop     si
+        call    check_status
+        jc      .out
+        push    si
+        mov     si, msg_tocaddr
+        call    print
+        mov     si, buf+8
+        mov     cx, 4
+        call    print_hexdump
+        call    crlf
+        pop     si
+        cmp     [buf+8], edx
+        call    report_zf
+.out:   ret
 
 ;-----------------------------------------------------------------------------
 ; Execute a SCSI command on [target]
@@ -762,6 +816,12 @@ msg_t_cap       db      'READ CAPACITY', 0
 msg_t_rd10      db      'READ(10)', 0
 msg_t_rd6       db      'READ(6)', 0
 msg_t_rd6cmp    db      'READ(6) data equals READ(10)', 0
+msg_t_toc       db      'READ TOC track 1 at LBA 0', 0
+msg_t_tocmsf    db      'READ TOC track 1 at 00:02:00 (MSF)', 0
+msg_t_tocses    db      'READ TOC session info (SCSI-2 form) at LBA 0', 0
+msg_t_tocses2   db      'READ TOC session info (MMC form) at LBA 0', 0
+msg_t_toclead   db      'READ TOC lead-out equals READ CAPACITY', 0
+msg_tocaddr     db      '    address: ', 0
 msg_t_msense    db      'MODE SENSE(6)', 0
 msg_t_mshdr     db      'MODE SENSE(6) header converted', 0
 msg_t_auto      db      'INQUIRY with direction auto', 0
@@ -776,6 +836,11 @@ cdb_inq255      db      6, 12h, 0, 0, 0, 255, 0
 cdb_tur         db      6, 00h, 0, 0, 0, 0, 0
 cdb_readcap     db      10, 25h, 0, 0, 0, 0, 0, 0, 0, 0, 0
 cdb_read10      db      10, 28h, 0, 0, 0, 0, 0, 0, 0, 1, 0
+cdb_toc_lba     db      10, 43h, 0, 0, 0, 0, 0, 1, 0, 12, 0
+cdb_toc_msf     db      10, 43h, 2, 0, 0, 0, 0, 1, 0, 12, 0
+cdb_toc_ses     db      10, 43h, 0, 0, 0, 0, 0, 0, 0, 12, 40h    ; SCSI-2 form
+cdb_toc_ses2    db      10, 43h, 0, 1, 0, 0, 0, 0, 0, 12, 0      ; MMC form
+cdb_toc_lead    db      10, 43h, 0, 0, 0, 0, 0, 0AAh, 0, 12, 0
 cdb_read6       db      6, 08h, 0, 0, 0, 1, 0
 cdb_msense6     db      6, 1Ah, 0, 3Fh, 0, 255, 0   ; all pages
 cdb_bogus       db      6, 0FFh, 0, 0, 0, 0, 0

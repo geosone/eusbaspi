@@ -39,7 +39,7 @@
 %include "defs.inc"
 %include "aspi.inc"
 
-%define VERSION_STR '0.10'
+%define VERSION_STR '0.11'
 
 NPRD            equ     8               ; PRDT entries per command
 BOUNCE_SIZE     equ     800h            ; bounce buffer (2 KB, 2 KB aligned)
@@ -80,6 +80,7 @@ MAX_IDE_CH      equ     10
 DF_DMA          equ     01h
 DF_CDB16        equ     04h
 DF_MS10         equ     08h             ; MODE SENSE/SELECT(6) unknown: use 10
+DF_TOCMSF       equ     10h             ; READ TOC answers in MSF only (IS902E)
 
 ; data mapping modes
 
@@ -249,6 +250,7 @@ s_len           dd      0               ; data length from the SRB
 s_buf           dd      0               ; data buffer (far pointer)
 s_dir           db      0               ; 0 none, 1 in, 2 out
 s_xlate         db      0
+s_tocmsf        db      0               ; READ TOC in LBA (formats 0, 1): see toc_fixup
 s_qbit          db      0               ; quirk_ops bit of this command
 s_sense         db      0, 0            ; sense key, ASC of the last CHECK
 s_blen          dw      0               ; bytes used in the bounce buffer
@@ -1113,6 +1115,25 @@ srb_exec:
 .noua:
         call    translate_cdb
         jc      .invalid
+        ; READ TOC (formats 0 and 1) of a CD drive in LBA: the answer is
+        ; checked by toc_fixup
+        mov     byte [s_tocmsf], 0
+        cmp     byte [cdb_buf], SCSI_READ_TOC
+        jne     .notoc
+        cmp     byte [dev_type+bx], 5
+        jne     .notoc
+        test    byte [cdb_buf+1], 2     ; MSF asked for
+        jnz     .notoc
+        mov     al, [cdb_buf+2]
+        and     al, 0Fh                 ; format (MMC)
+        jnz     .tocfmt
+        mov     al, [cdb_buf+9]         ; format in the control byte (SCSI-2)
+        shr     al, 6
+.tocfmt:
+        cmp     al, 1
+        ja      .notoc
+        mov     byte [s_tocmsf], 1
+.notoc:
         ; a CD drive is only asked for 2048 byte blocks (ASPI CD drivers do
         ; that): answered here.  ATAPI drives reject it anyway (see .failed),
         ; some USB CD firmware (SMI 3255/3257) hangs on it.
@@ -1215,6 +1236,7 @@ srb_exec:
         jne     .nomsb
         call    modesense_back
 .nomsb: call    inquiry_fixup
+        call    toc_fixup
 .good:  mov     byte [es:si+SRB_Status], SS_COMP
         call    exec_extras
         jmp     call_post
@@ -1449,6 +1471,102 @@ inquiry_fixup:
         je      .pop
         mov     byte [es:di+2], 2
 .pop:   pop     di
+        pop     es
+.out:   ret
+
+; READ TOC in LBA (s_tocmsf) answered: some USB CD firmware (Innostor
+; IS902E) answers in MSF whatever the MSF bit says, so track 1 is at
+; 00:02:00 (LBA 512) instead of LBA 0, and INICD looks for the volume
+; descriptor of the session at LBA 528.  Track 1 of a CD always starts at
+; LBA 0: an LBA answer with track 1 at 00 00 02 00 marks the drive
+; (DF_TOCMSF), and its LBA answers are converted, (M*60+S)*75+F-150.
+toc_fixup:
+        cmp     byte [s_tocmsf], 0
+        je      .out
+        push    es
+        pushad
+        mov     bp, [s_dev]
+        les     di, [s_buf]
+        mov     ecx, [s_xfer]
+        cmp     ecx, 4
+        jb      .pop
+        movzx   eax, word [es:di]       ; TOC data length (big endian)
+        xchg    al, ah
+        add     eax, 2
+        cmp     eax, ecx
+        jae     .lim
+        mov     ecx, eax
+.lim:   cmp     ecx, 0FFF0h
+        jbe     .lenok
+        mov     ecx, 0FFF0h
+.lenok:
+%ifdef SIM_TOCMSF
+        ; test build: answer like the IS902E (LBA turned into MSF)
+        mov     si, 4
+.sim:   lea     ax, [si+8]
+        cmp     ax, cx
+        ja      .simok
+        mov     bx, di
+        add     bx, si
+        mov     eax, [es:bx+4]
+        xchg    al, ah
+        rol     eax, 16
+        xchg    al, ah                  ; LBA
+        add     eax, 150
+        xor     edx, edx
+        push    ecx
+        mov     ecx, 75
+        div     ecx                     ; EDX = F
+        mov     [es:bx+7], dl
+        xor     edx, edx
+        mov     ecx, 60
+        div     ecx                     ; EDX = S, EAX = M
+        pop     ecx
+        mov     [es:bx+6], dl
+        mov     [es:bx+5], al
+        mov     byte [es:bx+4], 0
+        add     si, 8
+        jmp     .sim
+.simok:
+%endif
+        test    byte [ds:dev_flags+bp], DF_TOCMSF
+        jnz     .conv
+        mov     si, 4                   ; track 1 at 00:02:00?
+.find:  lea     ax, [si+8]
+        cmp     ax, cx
+        ja      .pop
+        mov     bx, di
+        add     bx, si
+        cmp     byte [es:bx+2], 1
+        jne     .fnext
+        cmp     dword [es:bx+4], 00020000h      ; 00 00 02 00
+        jne     .pop
+        or      byte [ds:dev_flags+bp], DF_TOCMSF
+        jmp     .conv
+.fnext: add     si, 8
+        jmp     .find
+.conv:  mov     si, 4
+.desc:  lea     ax, [si+8]
+        cmp     ax, cx
+        ja      .pop
+        mov     bx, di
+        add     bx, si
+        movzx   eax, byte [es:bx+5]     ; M
+        imul    eax, eax, 60
+        movzx   edx, byte [es:bx+6]     ; S
+        add     eax, edx
+        imul    eax, eax, 75
+        movzx   edx, byte [es:bx+7]     ; F
+        add     eax, edx
+        sub     eax, 150
+        mov     [es:bx+7], al           ; big endian
+        mov     [es:bx+6], ah
+        shr     eax, 16
+        mov     [es:bx+5], al
+        mov     [es:bx+4], ah
+        add     si, 8
+        jmp     .desc
+.pop:   popad
         pop     es
 .out:   ret
 
@@ -1813,9 +1931,14 @@ cd_wake:
         je      .again                  ; (each after a reset recovery)
         cmp     al, XR_HBA
         jne     .ans
-.again: loop    .try
+.again:
 %ifdef USB_BUILD
-        cmp     byte [hot_slots], 0     ; /H: reset its USB port
+        cmp     byte [rr_failed], 0     ; not even the bulk-only reset
+        jne     .port                   ; worked: no use trying again
+%endif
+        loop    .try
+%ifdef USB_BUILD
+.port:  cmp     byte [hot_slots], 0     ; /H: reset its USB port
         je      .out
         call    usb_replug
 %endif
@@ -2205,6 +2328,7 @@ msg_ctl4        db      ', ABAR ', 0
 msg_crlf        db      13, 10, 0
 msg_port        db      '  port ', 0
 msg_id          db      '  ID ', 0
+msg_slot        db      '  empty USB slot (/H)', 13, 10, 0
 msg_colon       db      ': ', 0
 msg_lun         db      ':Lun ', 0
 msg_ide         db      '  IDE ', 0
@@ -2308,6 +2432,26 @@ init:
         mov     si, msg_no_dev
         jmp     init_fail
 .found:
+        xor     bx, bx                  ; /H: the slots still empty, which
+.empty: cmp     bl, [dev_count]         ; ASPIDISK/ASPIFDD give letters too
+        jae     .listed
+        cmp     byte [dev_trans+bx], TR_EMPTY
+        jne     .enext
+        mov     si, msg_id
+        call    print
+        movzx   ax, byte [dev_tgt+bx]
+        call    print_dec
+        cmp     byte [opt_lun], 0
+        je      .eslot
+        mov     si, msg_lun
+        call    print
+        xor     ax, ax
+        call    print_dec
+.eslot: mov     si, msg_slot
+        call    print
+.enext: inc     bx
+        jmp     .empty
+.listed:
 %ifdef USB_BUILD
         call    bd_match                ; BIOS disks among ours: INT 13h
 %endif
