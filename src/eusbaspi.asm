@@ -39,7 +39,7 @@
 %include "defs.inc"
 %include "aspi.inc"
 
-%define VERSION_STR '0.9'
+%define VERSION_STR '0.10'
 
 NPRD            equ     8               ; PRDT entries per command
 BOUNCE_SIZE     equ     800h            ; bounce buffer (2 KB, 2 KB aligned)
@@ -1183,8 +1183,14 @@ srb_exec:
         mov     [s_over], ah
         pop     eax
         cmp     al, XR_TIMEOUT
+        je      .tmout
+        cmp     al, XR_HBA              ; a CD drive that broke the transport
+        jne     .noqt                   ; (after reset recovery): as a timeout,
+        mov     bx, [s_dev]             ; but no MODE(10) switch
+        cmp     byte [dev_type+bx], 5
         jne     .noqt
-        mov     bx, [s_dev]
+        jmp     .noms
+.tmout: mov     bx, [s_dev]
         mov     ah, [es:si+SRB_CDB]     ; MODE SENSE/SELECT(6) hung: use
         cmp     ah, SCSI_MODE_SENSE6    ; the 10 byte forms from now on
         je      .ms10
@@ -1803,9 +1809,11 @@ cd_wake:
         mov     bx, [s_dev]
         call    packet_bounce
         pop     cx
-        cmp     al, XR_TIMEOUT
+        cmp     al, XR_TIMEOUT          ; silent, or the transport broke
+        je      .again                  ; (each after a reset recovery)
+        cmp     al, XR_HBA
         jne     .ans
-        loop    .try
+.again: loop    .try
 %ifdef USB_BUILD
         cmp     byte [hot_slots], 0     ; /H: reset its USB port
         je      .out

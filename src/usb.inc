@@ -1857,7 +1857,8 @@ usb_scsi:
         cmp     al, US_STALL
         jne     .fail
         call    usb_reset_recovery
-        jmp     .fail
+        mov     byte [x_res], XR_HBA
+        jmp     .out
 
 .data:  ; data phase in pieces of up to one page
         cmp     dword [x_rem], 0
@@ -1981,14 +1982,15 @@ usb_scsi:
 .phase: call    usb_reset_recovery
         mov     byte [x_res], XR_HBA
         jmp     .out
-.fail:  mov     byte [x_res], XR_HBA
+.fail:  ; a transport error: reset recovery, so that the device takes the
+        ; next command (as Linux does).  Some USB CD firmware never answers
+        ; READ SUB-CHANNEL and NAKs for ever; a device that stalls the CSW
+        ; twice or fails a transfer is just as stuck until the reset.
+        mov     byte [x_res], XR_HBA
         cmp     al, US_TIMEOUT
-        jne     .out
-        ; the device went silent (some USB CD firmware never answers READ
-        ; SUB-CHANNEL and NAKs for ever): reset recovery, so that it takes
-        ; the next command
-        call    usb_reset_recovery
+        jne     .rec
         mov     byte [x_res], XR_TIMEOUT
+.rec:   call    usb_reset_recovery
 .out:   pop     es
         popad
         mov     al, [x_res]
