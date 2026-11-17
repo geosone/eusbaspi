@@ -39,7 +39,7 @@
 %include "defs.inc"
 %include "aspi.inc"
 
-%define VERSION_STR '0.12'
+%define VERSION_STR '0.13'
 
 NPRD            equ     8               ; PRDT entries per command
 BOUNCE_SIZE     equ     800h            ; bounce buffer (2 KB, 2 KB aligned)
@@ -81,6 +81,7 @@ DF_DMA          equ     01h
 DF_CDB16        equ     04h
 DF_MS10         equ     08h             ; MODE SENSE/SELECT(6) unknown: use 10
 DF_TOCMSF       equ     10h             ; READ TOC answers in MSF only (IS902E)
+DF_PLAYED       equ     20h             ; a CD drive was sent PLAY AUDIO
 
 ; data mapping modes
 
@@ -210,6 +211,7 @@ dev_quirk       times MAX_DEV db 0      ; quirk_ops bits the device never answer
 ; production tools) never answers: they get a short timeout, and after one
 ; timeout EUSBASPI answers them itself with ILLEGAL REQUEST (8 entries)
 quirk_ops       db      42h, 44h, 46h, 4Ah, 4Bh, 4Eh, 51h, 0BDh
+play_ops        db      45h, 47h, 48h, 49h, 0A5h, 0A9h, 0  ; PLAY AUDIO forms
 QUIRK_TICKS     equ     3 * 182 / 10    ; 3 s
 dev_tgt         times MAX_DEV db 0      ; ASPI target and LUN of the entry
 dev_lun         times MAX_DEV db 0      ;   (without /L: target = entry)
@@ -1094,7 +1096,24 @@ srb_exec:
         cmp     byte [dev_type+bx], 5
         jne     .noq
         mov     al, [cdb_buf]
-        mov     di, quirk_ops
+        ; READ SUB-CHANNEL only matters while audio plays: CD drivers poll
+        ; it (SYMCD), and some USB CD firmware (SK6221) hangs on it for
+        ; good.  Until the drive gets a PLAY AUDIO it is answered here
+        ; ("no current audio status").
+        mov     di, play_ops
+.pl:    cmp     byte [di], 0
+        je      .nopl
+        cmp     al, [di]
+        je      .play
+        inc     di
+        jmp     .pl
+.play:  or      byte [dev_flags+bx], DF_PLAYED
+        jmp     .qs
+.nopl:  cmp     al, 42h
+        jne     .qs
+        test    byte [dev_flags+bx], DF_PLAYED
+        jz      quirk_local
+.qs:    mov     di, quirk_ops
         mov     ah, 1
 .q:     cmp     al, [di]
         je      .qhit
@@ -1140,13 +1159,13 @@ srb_exec:
         ; some USB CD firmware (SMI 3255/3257) hangs on it.
         cmp     byte [s_xlate], XL_MODESELECT
         jne     .nosel
+        ; ARTCD.SYS adds the read error recovery page (01h), on which the
+        ; same firmware hangs as well: answered here too.
         cmp     byte [dev_type+bx], 5
         jne     .nosel
-        cmp     byte [s_msel_bdonly], 0
-        je      .nosel
         mov     di, [bounce_ptr]
         cmp     byte [di+7], 0          ; no block descriptor at all
-        je      .selok
+        je      .bdok
         cmp     byte [di+7], 8
         jne     .nosel
         cmp     word [s_blen], 16
@@ -1154,6 +1173,27 @@ srb_exec:
         cmp     word [di+13], 0800h     ; block length 00 08 00 (2048)
         jne     .nosel
         cmp     byte [di+15], 0
+        jne     .nosel
+.bdok:  cmp     byte [s_msel_bdonly], 0
+        jne     .selok
+        push    ax
+        push    cx
+        movzx   cx, byte [di+7]         ; the pages: only page 01h?
+        mov     ax, [s_blen]
+        sub     ax, 8
+        sub     ax, cx
+        jbe     .selno
+        add     di, 8
+        add     di, cx
+        mov     cl, [di]
+        and     cl, 3Fh
+        cmp     cl, 01h
+        jne     .selno
+        movzx   cx, byte [di+1]
+        add     cx, 2
+        cmp     cx, ax
+.selno: pop     cx
+        pop     ax
         jne     .nosel
 .selok: mov     eax, [s_len]
         mov     [s_xfer], eax

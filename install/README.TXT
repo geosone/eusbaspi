@@ -121,6 +121,10 @@ Switches
            command itself with ILLEGAL REQUEST.  A CD drive that went
            silent is woken with TEST UNIT READY and further resets;
            with /H, a USB port reset and enumeration follow if needed.
+           READ SUB-CHANNEL is answered by EUSBASPI itself ("no
+           current audio status") until the drive got a PLAY AUDIO
+           command, and so is a MODE SELECT that only sets 2048 byte
+           blocks: some USB CD firmware hangs on them.
   /X       Also take over xHCI (USB 3.x) controllers.
   /Q       Quiet: no messages at boot time.
   /V       Verbose: show the controllers, ports and devices.
