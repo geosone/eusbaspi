@@ -106,8 +106,9 @@ hot_check_port:
 
 ; target [s_dev] stays silent after reset recovery: reset its root port and
 ; enumerate what is behind it again, as if it had been unplugged and
-; plugged in (Linux, too, resets the port first).  The target keeps its
-; slot, and its next command gets UNIT ATTENTION.
+; plugged in (Linux, too, resets the port first), and clear the halts of
+; its bulk endpoints.  The target keeps its slot, and its next command gets
+; UNIT ATTENTION.
 usb_replug:
         pushad
         push    es
@@ -132,6 +133,22 @@ usb_replug:
         pop     ax
         mov     [init_port], ax
         call    hot_csc                 ; the reset is no new device
+        ; the halts of its bulk endpoints cleared too: a drive whose
+        ; bulk-only reset was taken but reported as failed (SK6221 under
+        ; VMware) keeps them halted through the new configuration
+        mov     byte [rr_failed], 0
+        mov     si, [s_dev]
+        cmp     byte [dev_trans+si], TR_USB
+        jne     .out
+        add     si, si
+        movzx   bx, byte [dev_port+si]
+        mov     al, [usbd_hc+bx]
+        call    hc_select
+        mov     al, [usbd_epin+bx]
+        or      al, 80h
+        call    usb_clear_halt
+        mov     al, [usbd_epout+bx]
+        call    usb_clear_halt
 .out:   pop     es
         popad
         ret

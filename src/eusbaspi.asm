@@ -39,7 +39,7 @@
 %include "defs.inc"
 %include "aspi.inc"
 
-%define VERSION_STR '0.11'
+%define VERSION_STR '0.12'
 
 NPRD            equ     8               ; PRDT entries per command
 BOUNCE_SIZE     equ     800h            ; bounce buffer (2 KB, 2 KB aligned)
@@ -250,7 +250,7 @@ s_len           dd      0               ; data length from the SRB
 s_buf           dd      0               ; data buffer (far pointer)
 s_dir           db      0               ; 0 none, 1 in, 2 out
 s_xlate         db      0
-s_tocmsf        db      0               ; READ TOC in LBA (formats 0, 1): see toc_fixup
+s_tocmsf        db      0               ; READ TOC in LBA: 1 + format (0, 1), see toc_fixup
 s_qbit          db      0               ; quirk_ops bit of this command
 s_sense         db      0, 0            ; sense key, ASC of the last CHECK
 s_blen          dw      0               ; bytes used in the bounce buffer
@@ -1132,7 +1132,8 @@ srb_exec:
 .tocfmt:
         cmp     al, 1
         ja      .notoc
-        mov     byte [s_tocmsf], 1
+        inc     al
+        mov     [s_tocmsf], al          ; 1 + the format
 .notoc:
         ; a CD drive is only asked for 2048 byte blocks (ASPI CD drivers do
         ; that): answered here.  ATAPI drives reject it anyway (see .failed),
@@ -1480,6 +1481,9 @@ inquiry_fixup:
 ; descriptor of the session at LBA 528.  Track 1 of a CD always starts at
 ; LBA 0: an LBA answer with track 1 at 00 00 02 00 marks the drive
 ; (DF_TOCMSF), and its LBA answers are converted, (M*60+S)*75+F-150.
+; Only addresses that are MSF (S < 60, F < 75, from 00:02:00 on): SMI
+; 3255/3257/3267/3268 answer the TOC in MSF too, but the session
+; information (format 1) in LBA, 0 for the first session.
 toc_fixup:
         cmp     byte [s_tocmsf], 0
         je      .out
@@ -1501,7 +1505,17 @@ toc_fixup:
         mov     ecx, 0FFF0h
 .lenok:
 %ifdef SIM_TOCMSF
-        ; test build: answer like the IS902E (LBA turned into MSF)
+        ; test build: answer like the IS902E (LBA turned into MSF); with
+        ; SIM_SMI like the SMI drives (the session information in LBA)
+%ifdef SIM_SMI
+        cmp     byte [s_tocmsf], 2      ; session information: LBA 0 (QEMU
+        jne     .simtoc                 ;  answers it in MSF anyway)
+        cmp     cx, 12
+        jb      .simok
+        mov     dword [es:di+8], 0
+        jmp     .simok
+.simtoc:
+%endif
         mov     si, 4
 .sim:   lea     ax, [si+8]
         cmp     ax, cx
@@ -1551,6 +1565,12 @@ toc_fixup:
         ja      .pop
         mov     bx, di
         add     bx, si
+        cmp     byte [es:bx+4], 0       ; MSF at all?  (the SMI drives
+        jne     .dnext                  ;  answer the session information
+        cmp     byte [es:bx+6], 60      ;  in LBA: LBA 0 stays)
+        jae     .dnext
+        cmp     byte [es:bx+7], 75
+        jae     .dnext
         movzx   eax, byte [es:bx+5]     ; M
         imul    eax, eax, 60
         movzx   edx, byte [es:bx+6]     ; S
@@ -1559,12 +1579,13 @@ toc_fixup:
         movzx   edx, byte [es:bx+7]     ; F
         add     eax, edx
         sub     eax, 150
+        jb      .dnext                  ; before 00:02:00: an LBA
         mov     [es:bx+7], al           ; big endian
         mov     [es:bx+6], ah
         shr     eax, 16
         mov     [es:bx+5], al
         mov     [es:bx+4], ah
-        add     si, 8
+.dnext: add     si, 8
         jmp     .desc
 .pop:   popad
         pop     es
