@@ -135,6 +135,12 @@ Files
   USBSYNC.EXE    the same for Windows 3.1x
   ASPITEST.COM   test program: lists the ASPI host adapters and devices
   ASPISCAN.COM   which devices the OpenASPI drivers would take (OpenASPI)
+  ASPICTL.EXE    OpenASPI: eject, close, lock, unlock, status and write
+                 protection of a drive letter (CD, ZIP, LS-120, ...);
+                 installed also as EJECT.EXE, CLOSE.EXE, LOCK.EXE,
+                 UNLOCK.EXE, STATUS.EXE, PROTECT.EXE and UNPROTEC.EXE,
+                 e.g. EJECT A: or EJECT D: (MS-DOS 7: ASPICTL LOCK and
+                 ASPICTL UNLOCK, its LOCK/UNLOCK are COMMAND.COM commands)
   README.TXT     this file
   LICENSE.TXT    GNU General Public License version 2
   GPL3.TXT       GNU General Public License version 3 (the installer)
