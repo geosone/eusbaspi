@@ -2026,6 +2026,7 @@ cd_wake:
 
 %ifdef USB_BUILD
 %include "usb.inc"
+%include "hid.inc"
 %include "biosdisk.inc"
 %endif
 
@@ -2489,10 +2490,17 @@ init:
 .scanned:
         cmp     byte [dev_count], 0
         jne     .found
+%ifdef USB_BUILD
+        cmp     byte [hid_count], 0     ; HID devices only: stay for USBHID
+        jne     .found
+%endif
         call    usb_stop_all            ; DOS takes our DMA area back
         mov     si, msg_no_dev
         jmp     init_fail
 .found:
+%ifdef USB_BUILD
+        call    amis_install
+%endif
         xor     bx, bx                  ; /H: the slots still empty, which
 .empty: cmp     bl, [dev_count]         ; ASPIDISK/ASPIFDD give letters too
         jae     .listed

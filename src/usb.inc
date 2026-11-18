@@ -1269,11 +1269,39 @@ uhci_frame:
 ; frame list EAX for the current UHCI controller.  All UHCI controllers
 ; run on the empty list; the one with a transfer gets the list with our QH.
 uhci_set_fl:
+        push    eax
         push    dx
-        mov     dx, UHCI_FRBASE
+        push    bx
+        movzx   bx, byte [cur_hc]
+        shl     bx, 2
+        cmp     dword [uhc_fl+bx], 0
+        je      .set
+        ; a controller with HID pipes keeps its own frame list: our queue
+        ; head is hung behind its tail queue head instead
+        push    eax
+        push    si
+        push    di
+        mov     si, bx
+        shr     si, 2
+        cmp     eax, [phys_fl]
+        mov     eax, 1
+        jne     .idle
+        mov     eax, [phys_uqh]
+        or      al, 2
+.idle:  push    eax
+        call    hid_hcp
+        pop     eax
+        mov     [di+16], eax            ; tail QH link
+        pop     di
+        pop     si
+        pop     eax
+        mov     eax, [uhc_fl+bx]
+.set:   mov     dx, UHCI_FRBASE
         call    uhci_port_addr
         out     dx, eax
+        pop     bx
         pop     dx
+        pop     eax
         ret
 
 ; DX = UHCI register -> DX = I/O port of the current controller
@@ -1340,22 +1368,16 @@ xh_clr_trb:
         mov     dword [xh_trb+12], 0
         ret
 
-; next event -> xh_ev; ECX = timeout in ticks, CF on timeout
+; next event -> xh_ev; ECX = timeout in ticks, CF on timeout.  Events of
+; HID pipes are put aside for the HID poll (hid_xstash).
 xh_event:
         pushad
         pushf
         sti
         call    get_ticks
         mov     edx, eax
-.w:     movzx   ax, byte [xh_evt_deq]
-        shl     ax, 4
-        add     ax, XH_EVTR
-        add     ax, [xh_area]
-        call    xa
-        mov     al, [di+12]
-        and     al, 1
-        cmp     al, [xh_evt_cyc]
-        je      .got
+.w:     call    xh_peek
+        jnc     .got
         call    poll_pause
         call    get_ticks
         sub     eax, edx
@@ -1365,7 +1387,39 @@ xh_event:
         popad
         stc
         ret
-.got:   mov     eax, [di]
+.got:   call    xh_take
+%ifdef USB_BUILD
+        call    hid_xstash
+        jc      .w
+%endif
+        popf
+        popad
+        clc
+        ret
+
+; an event at the dequeue pointer?  DI = it, CF if none
+xh_peek:
+        push    eax
+        movzx   ax, byte [xh_evt_deq]
+        shl     ax, 4
+        add     ax, XH_EVTR
+        add     ax, [xh_area]
+        call    xa
+        mov     al, [di+12]
+        and     al, 1
+        cmp     al, [xh_evt_cyc]
+        pop     eax
+        je      .yes
+        stc
+        ret
+.yes:   clc
+        ret
+
+; the event at DI -> xh_ev, dequeue pointer on (also the controller's)
+xh_take:
+        push    eax
+        push    ecx
+        mov     eax, [di]
         mov     [xh_ev], eax
         mov     eax, [di+4]
         mov     [xh_ev+4], eax
@@ -1390,9 +1444,8 @@ xh_event:
         xor     ecx, ecx
         mov     ax, XR_ERDP + 4
         call    xrt_wr
-        popf
-        popad
-        clc
+        pop     ecx
+        pop     eax
         ret
 
 ; TRB type of the event in xh_ev -> AL

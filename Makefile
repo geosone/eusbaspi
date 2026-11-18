@@ -6,10 +6,21 @@ NFLAGS  = -f bin -w-reloc-abs-word
 WATCOM ?= /opt/watcom
 WLINK   = $(WATCOM)/binl64/wlink
 
-all: build/EUSBASPI.SYS build/ASPITEST.COM build/USBSYNC.COM build/USBSYNCW.EXE build/EUSBVXD.386
+all: build/EUSBASPI.SYS build/USBHID.SYS build/HIDINFO.COM build/MTEST.COM build/ASPITEST.COM build/USBSYNC.COM build/USBSYNCW.EXE build/EUSBVXD.386
 
-build/EUSBASPI.SYS: src/eusbaspi.asm src/usb.inc src/usbinit.inc src/hotplug.inc src/biosdisk.inc src/biosinit.inc src/aspi.inc src/defs.inc | build
+build/EUSBASPI.SYS: src/eusbaspi.asm src/usb.inc src/usbinit.inc src/hotplug.inc src/biosdisk.inc src/biosinit.inc src/aspi.inc src/defs.inc src/hid.inc | build
 	$(NASM) $(NFLAGS) -Isrc/ -l build/eusbaspi.lst -o $@ $<
+
+# USBHID.SYS: USB mice through EUSBASPI's HID pipes (PS/2 mouse for DOS)
+build/USBHID.SYS: src/usbhid.asm | build
+	$(NASM) $(NFLAGS) -Isrc/ -o $@ $<
+
+build/HIDINFO.COM: tools/hidinfo.asm | build
+	$(NASM) $(NFLAGS) -Itools/ -o $@ $<
+
+# MTEST.COM: INT 33h test for the tests (not in the package)
+build/MTEST.COM: tools/mtest.asm | build
+	$(NASM) $(NFLAGS) -Itools/ -o $@ $<
 
 build/ASPITEST.COM: tools/aspitest.asm src/aspi.inc | build
 	$(NASM) $(NFLAGS) -Itools/ -Isrc/ -o $@ $<
@@ -51,7 +62,7 @@ SHSUCD ?= ../shsucd/build/pkg
 PKG = build/pkg
 package: all
 	rm -rf $(PKG) && mkdir -p $(PKG)
-	cp build/EUSBASPI.SYS build/EUSBVXD.386 build/ASPITEST.COM build/USBSYNC.COM $(PKG)/
+	cp build/EUSBASPI.SYS build/EUSBVXD.386 build/ASPITEST.COM build/USBSYNC.COM build/USBHID.SYS build/HIDINFO.COM $(PKG)/
 	cp build/USBSYNCW.EXE $(PKG)/USBSYNC.EXE
 	cd $(OPENASPI) && cp ASPICDA.SYS ASPIFDD.SYS ASPIDSK.SYS ASPITAP.SYS ASPISCAN.COM TAPECTL.COM ASPICTL.EXE $(abspath $(PKG))/
 	cd $(SHSUCD) && cp SHSUCDX.COM CDAUDIO.COM SHSUCD.LIC SHSUCD.TXT $(abspath $(PKG))/

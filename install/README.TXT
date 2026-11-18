@@ -73,6 +73,23 @@ For that EUSBASPI must be loaded low (DEVICE=, not DEVICEHIGH=): the
 BIOS can't read into upper memory.
 
 
+USB mice: USBHID
+----------------
+
+EUSBASPI takes the USB controllers over, and with them a USB mouse the
+BIOS may have driven.  USBHID.SYS, loaded after EUSBASPI.SYS, gives the
+USB mice to DOS as the PS/2 mouse of the BIOS:
+
+    DEVICE=C:\OPENASPI\EUSBASPI.SYS
+    DEVICE=C:\OPENASPI\USBHID.SYS [/V]
+
+Then load the mouse driver for a PS/2 mouse in AUTOEXEC.BAT as usual
+(Microsoft MOUSE, CuteMouse, Logitech MOUSE).  All USB mice work at once,
+on UHCI, OHCI, EHCI and xHCI (/X).  A mouse plugged in later is not seen
+yet.  HIDINFO lists the USB mice EUSBASPI found (/R shows the reports of
+the first one for 8 seconds).
+
+
 Unplugging USB drives: USBSYNC
 ------------------------------
 

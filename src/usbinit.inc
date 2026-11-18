@@ -2288,7 +2288,7 @@ usb_enum_device:
         cmp     byte [new_class], 09h
         je      .hub
         call    find_msc_interface
-        jc      .notmsc
+        jc      .nomsc
         call    is_xhci
         jne     .setcfg
         call    xhci_config_eps
@@ -2353,6 +2353,29 @@ usb_enum_device:
         call    usbd_take               ; entry BX stays in use
         jmp     usb_hub_scan
 
+.nomsc: call    find_hid_functions      ; HID interfaces for client drivers
+        jc      .notmsc
+        mov     si, [bounce_ptr]        ; SET_CONFIGURATION
+        movzx   dx, byte [si+5]
+        mov     ax, 0900h
+        xor     cx, cx
+        xor     si, si
+        call    usb_control
+        cmp     al, US_OK
+        jne     .hidfail
+        call    hid_setup               ; boot protocol, no idle reports
+        call    xhci_config_hid         ; xHCI: its interrupt endpoints
+        mov     al, [hid_new]
+        add     [hid_count], al
+        call    usbd_take               ; entry BX stays in use
+        cmp     byte [opt_verbose], 0
+        je      .out
+        mov     si, msg_usb_hid
+        call    print_usb_dev
+        ret
+.hidfail:
+        mov     byte [hid_new], 0       ; its functions are not counted
+        jmp     .fail
 .notmsc:
         inc     byte [usb_addr_base]    ; keep its address in use
         call    xhci_drop_dev
@@ -2399,6 +2422,111 @@ print_usb_dev:
         call    print_hex16
         pop     si
         jmp     print
+
+; HID interfaces (class 3, alternate setting 0, with an interrupt IN
+; endpoint) in the configuration descriptor in the bounce buffer: entries
+; hid_count .. hid_count + hid_new - 1 for device BX (counted by the
+; caller once the device is configured).  CF if there is none.
+find_hid_functions:
+        push    bx
+        mov     byte [hid_new], 0
+        mov     si, [bounce_ptr]
+        mov     di, si
+        add     di, [cfg_len]
+        xor     dl, dl                  ; inside a HID interface without EP
+.walk:  cmp     si, di
+        jae     .end
+        movzx   ax, byte [si]
+        or      al, al
+        jz      .end
+        movzx   bp, byte [hid_count]
+        add     bp, [ds:hid_new_w]
+        cmp     byte [si+1], 4          ; interface
+        jne     .ep
+        xor     dl, dl
+        cmp     byte [si+5], 03h        ; HID
+        jne     .adv
+        cmp     byte [si+3], 0          ; alternate setting 0
+        jne     .adv
+        cmp     bp, HID_MAX
+        jae     .adv
+        mov     cl, [si+2]
+        mov     [ds:hidf_iface+bp], cl
+        mov     cl, [si+6]
+        mov     [ds:hidf_sub+bp], cl
+        mov     cl, [si+7]
+        mov     [ds:hidf_proto+bp], cl
+        mov     dl, 1
+        jmp     .adv
+.ep:    cmp     byte [si+1], 5
+        jne     .adv
+        or      dl, dl
+        jz      .adv
+        mov     cl, [si+3]
+        and     cl, 3
+        cmp     cl, 3                   ; interrupt
+        jne     .adv
+        test    byte [si+2], 80h        ; IN
+        jz      .adv
+        mov     cl, [si+2]
+        and     cl, 0Fh
+        mov     [ds:hidf_ep+bp], cl
+        mov     cl, [si+6]
+        mov     [ds:hidf_ival+bp], cl
+        mov     [ds:hidf_dev+bp], bl
+        mov     byte [ds:hidf_tog+bp], 0
+        mov     byte [ds:hidf_run+bp], 0
+        add     bp, bp
+        mov     cx, [si+4]
+        and     cx, 07FFh
+        mov     [ds:hidf_mps+bp], cx
+        mov     cx, [new_vidpid]
+        mov     [ds:hidf_vid+bp], cx
+        mov     cx, [new_vidpid+2]
+        mov     [ds:hidf_pid+bp], cx
+        inc     byte [hid_new]
+        xor     dl, dl                  ; one endpoint per interface
+.adv:   add     si, ax
+        jmp     .walk
+.end:   pop     bx
+        cmp     byte [hid_new], 1
+        ret                             ; CF: none (0 < 1)
+
+; the new HID functions of device BX: SET_PROTOCOL(boot) for boot devices,
+; SET_IDLE(0) (reports only on changes); stalls are ignored
+hid_setup:
+        movzx   di, byte [hid_count]
+        movzx   bp, byte [hid_new]
+        add     bp, di
+.f:     cmp     di, bp
+        jae     .out
+        movzx   cx, byte [hidf_iface+di]
+        cmp     byte [hidf_sub+di], 1   ; boot interface subclass
+        jne     .idle
+        mov     ax, 0B21h               ; SET_PROTOCOL, class, interface
+        xor     dx, dx                  ; 0 = boot protocol
+        xor     si, si
+        push    di
+        push    bp
+        call    usb_control
+        pop     bp
+        pop     di
+.idle:  movzx   cx, byte [hidf_iface+di]
+        mov     ax, 0A21h               ; SET_IDLE
+        xor     dx, dx                  ; duration 0: only on changes
+        xor     si, si
+        push    di
+        push    bp
+        call    usb_control
+        pop     bp
+        pop     di
+        inc     di
+        jmp     .f
+.out:   ret
+
+hid_new         db      0
+                db      0               ; hid_new as a word (high byte 0)
+hid_new_w       equ     hid_new
 
 ; mass storage interface (class 8, bulk-only protocol 50h) in the
 ; configuration descriptor in the bounce buffer -> usbd_iface / endpoints of
@@ -2677,9 +2805,417 @@ msg_hc_dead     db      '    controller does not respond', 13, 10, 0
 msg_usbport     db      '    port ', 0
 msg_vidpid      db      ': USB device ', 0
 msg_usb_other   db      ' is not a bulk-only mass storage device', 13, 10, 0
+msg_usb_hid     db      ' is a HID device (for USBHID.SYS)', 13, 10, 0
 msg_usb_fail    db      ' does not answer', 13, 10, 0
 msg_xhci_skip   db      ' skipped (/X takes it over; a USB keyboard or mouse on it', 13, 10
                 db      '    then only works again after a reboot)', 13, 10, 0
 msg_xhci_one    db      '    too many xHCI controllers', 13, 10, 0
 msg_xhci_scr    db      '    needs scratchpad memory from XMS (HIMEM.SYS)', 13, 10, 0
 msg_companion   db      ': full / low speed device, handed to the companion', 13, 10, 0
+
+;-----------------------------------------------------------------------------
+; amis_install: with HID functions, take a free AMIS multiplex number and
+; hook INT 2Dh (client drivers such as USBHID.SYS find us there)
+;-----------------------------------------------------------------------------
+amis_install:
+        cmp     byte [hid_count], 0
+        je      .out
+        call    hid_pipes_init
+        push    es
+        xor     ax, ax
+        mov     es, ax
+        mov     ax, [es:2Dh*4]
+        or      ax, [es:2Dh*4+2]
+        jnz     .scan
+        mov     word [amis_int2d.old], amis_iret ; no AMIS handler yet
+        mov     [amis_int2d.old+2], cs
+        mov     byte [amis_mux], 0
+        jmp     .hook
+.scan:  xor     bx, bx                  ; BH = multiplex number
+        mov     byte [amis_free], 0FFh
+.next:  mov     ah, bh
+        xor     al, al
+        push    bx
+        int     2Dh
+        pop     bx
+        or      al, al
+        jnz     .used
+        cmp     byte [amis_free], 0FFh
+        jne     .n
+        mov     [amis_free], bh
+        jmp     .n
+.used:  cmp     al, 0FFh                ; ours already there?
+        jne     .n
+        push    ds
+        mov     ds, dx
+        mov     si, di
+        push    cs
+        pop     es
+        mov     di, amis_sig
+        mov     cx, 16
+        repe    cmpsb
+        pop     ds
+        je      .done                   ; another EUSBASPI serves them
+.n:     inc     bh
+        jnz     .next
+        mov     al, [amis_free]
+        cmp     al, 0FFh
+        je      .done                   ; all 256 taken
+        mov     [amis_mux], al
+        mov     ax, 352Dh
+        int     21h
+        mov     [amis_int2d.old], bx
+        mov     [amis_int2d.old+2], es
+.hook:  mov     ax, 252Dh
+        mov     dx, amis_int2d
+        int     21h
+        cmp     byte [opt_verbose], 0
+        je      .done
+        mov     si, msg_hid1
+        call    print
+        movzx   ax, byte [hid_count]
+        call    print_dec
+        mov     si, msg_hid2
+        call    print
+        movzx   ax, byte [amis_mux]
+        call    print_hex16
+        mov     si, msg_crlf
+        call    print
+.done:  pop     es
+.out:   ret
+
+amis_free       db      0FFh
+msg_hid1        db      'USB HID interfaces for client drivers: ', 0
+msg_hid2        db      ', AMIS multiplex ', 0
+
+;-----------------------------------------------------------------------------
+; hid_pipes_init: the HID page, and an own frame list for every UHCI
+; controller with HID functions (XMS if there is some: the list is only
+; written here; else a DMA page)
+;-----------------------------------------------------------------------------
+hid_pipes_init:
+        call    alloc_page
+        jc      .out                    ; no pipes (the API says 5)
+        mov     [hid_page], ax
+        mov     [phys_hid], edx
+        mov     ax, UD_UQH
+        call    ud_addr
+        mov     [phys_uqh], eax
+        xor     cx, cx                  ; controller
+.hc:    cmp     cl, [usb_hc_count]
+        jae     .out
+        movzx   si, cl
+        cmp     byte [hc_type+si], HC_UHCI
+        je      .want
+        cmp     byte [hc_type+si], HC_OHCI
+        je      .want
+        cmp     byte [hc_type+si], HC_EHCI
+        jne     .next
+.want:  xor     bx, bx                  ; a HID function on it?
+.f:     cmp     bl, [hid_count]
+        jae     .next
+        movzx   di, byte [hidf_dev+bx]
+        cmp     [usbd_hc+di], cl
+        je      .uhci
+        inc     bx
+        jmp     .f
+.uhci:  push    cx
+        cmp     byte [hc_type+si], HC_OHCI
+        je      .ohci
+        cmp     byte [hc_type+si], HC_EHCI
+        je      .ehci
+        call    uhci_own_fl
+        pop     cx
+        jmp     .next
+.ohci:  call    ohci_periodic
+        pop     cx
+        jmp     .next
+.ehci:  call    ehci_periodic
+        pop     cx
+.next:  inc     cx
+        jmp     .hc
+.out:   ret
+
+; controller SI (UHCI): head and tail queue head, frame list -> uhc_fl
+uhci_own_fl:
+        call    hid_hcp                 ; DI = head QH, EAX = its address
+        mov     edx, eax
+        add     eax, 16
+        or      al, 2
+        mov     [di], eax               ; head -> tail
+        mov     dword [di+4], 1
+        mov     dword [di+16], 1        ; tail: end (idle)
+        mov     dword [di+20], 1
+        or      dl, 2                   ; frame list entries: head QH
+        call    fl_alloc
+        jc      .out
+        shl     si, 2
+        mov     [uhc_fl+si], edx
+        shr     si, 2
+        mov     ax, si                  ; switch the controller over
+        call    hc_select
+        mov     eax, [phys_fl_idle]
+        call    uhci_set_fl
+.out:   ret
+
+; a frame list of 1024 entries EDX for controller SI -> EDX its physical
+; address (4 KB aligned: XMS if there, else a DMA page); CF if no memory
+fl_alloc:
+        push    si
+        mov     di, [bounce_ptr]        ; the list, built in the bounce page
+        mov     cx, 1024
+.fill:  mov     [di], edx
+        add     di, 4
+        loop    .fill
+        pop     si
+        cmp     dword [xms_entry], 0
+        je      .conv
+        mov     ah, 09h                 ; 8 KB XMS (4 KB aligned inside)
+        mov     dx, 8
+        call    far [xms_entry]
+        cmp     ax, 1
+        jne     .conv
+        mov     [hx_move+10], dx        ; destination handle
+        push    dx
+        mov     ah, 0Ch                 ; lock -> DX:BX linear = physical
+        call    far [xms_entry]
+        pop     cx
+        cmp     ax, 1
+        jne     .xfree
+        shl     edx, 16
+        mov     dx, bx
+        mov     eax, edx
+        add     eax, 0FFFh
+        and     ax, 0F000h
+        push    eax
+        sub     eax, edx                ; offset of the aligned list
+        mov     [hx_move+12], eax
+        mov     ax, [bounce_ptr]
+        mov     [hx_move+6], ax         ; source: the bounce page
+        mov     [hx_move+8], cs
+        push    si
+        mov     si, hx_move
+        mov     ah, 0Bh
+        call    far [xms_entry]
+        pop     si
+        pop     edx
+        cmp     ax, 1
+        jne     .fail                   ; (the block stays allocated)
+        clc
+        ret
+.xfree: mov     dx, cx
+        mov     ah, 0Ah
+        call    far [xms_entry]
+.conv:  call    alloc_page              ; no XMS: a DMA page
+        jc      .fail
+        push    si
+        push    es
+        push    cs
+        pop     es
+        mov     si, [bounce_ptr]
+        mov     di, [ud_base]
+        add     di, ax
+        mov     cx, 1024
+        cld
+        rep     movsd
+        pop     es
+        pop     si
+        clc
+        ret
+.fail:  stc
+        ret
+
+hx_move         dd      4096            ; XMS move: length
+                dw      0               ; source handle 0: real mode address
+                dd      0               ; source offset:segment
+                dw      0               ; destination handle
+                dd      0               ; destination offset
+
+; controller SI (OHCI): head ED (skipped) in all 32 entries of the HCCA's
+; interrupt table, periodic list on
+ohci_periodic:
+        call    hid_hcp
+        mov     dword [di], OED_SKIP
+        mov     dword [di+4], 0
+        mov     dword [di+8], 0
+        mov     dword [di+12], 0
+        mov     edx, eax
+        push    es
+        push    cs
+        pop     es
+        mov     ax, si                  ; HCCA: UD_HCCA + controller * 256
+        shl     ax, 8
+        add     ax, UD_HCCA
+        call    ud_addr
+        mov     eax, edx
+        mov     cx, 32
+        cld
+        rep     stosd
+        pop     es
+        mov     ax, si
+        call    hc_select
+        mov     ax, OHCI_CONTROL
+        call    reg_rd
+        mov     ecx, eax
+        or      cl, 04h                 ; PLE
+        mov     ax, OHCI_CONTROL
+        call    reg_wr
+        ret
+
+; controller SI (EHCI): head QH (never active) in all entries of its own
+; periodic frame list, periodic schedule on
+EHCI_FRINDEX    equ     0Ch
+EHCI_PERIODIC   equ     14h
+EC_PSE          equ     10h
+ES_PSS          equ     4000h
+
+ehci_periodic:
+        call    hid_hcp
+        push    di
+        mov     cx, 12
+.clr:   mov     dword [di], 0
+        add     di, 4
+        loop    .clr
+        pop     di
+        mov     dword [di], 1           ; link: none (yet)
+        mov     dword [di+4], 0         ; address 0, endpoint 0, full speed
+        mov     dword [di+8], (1 << 30) | 01h
+        mov     dword [di+16], 1        ; overlay: no qTD, inactive
+        mov     dword [di+20], 1
+        mov     edx, eax
+        or      dl, 2
+        call    fl_alloc
+        jc      .out
+        mov     ax, si
+        call    hc_select
+        mov     ecx, edx
+        mov     ax, EHCI_PERIODIC
+        call    reg_wr
+        mov     ax, EHCI_USBCMD
+        call    reg_rd
+        mov     ecx, eax
+        and     cl, ~0Ch                ; 1024 entries
+        or      cl, EC_PSE
+        mov     ax, EHCI_USBCMD
+        call    reg_wr
+        push    bx
+        mov     ax, EHCI_USBSTS
+        mov     ecx, ES_PSS
+        mov     edx, ecx
+        mov     bx, 3
+        call    wait_reg
+        pop     bx
+        jc      .out
+        mov     cx, si
+        mov     ax, 1
+        shl     ax, cl
+        or      [eh_ok], ax
+.out:   ret
+
+; xHCI device BX with HID functions hid_count .. + hid_new - 1: their
+; interrupt IN endpoints on rings 1-3 (Configure Endpoint)
+xhci_config_hid:
+        movzx   si, byte [usbd_hc+bx]
+        cmp     byte [hc_type+si], HC_XHCI
+        jne     .ret
+        pusha
+        movzx   si, byte [xh_map+bx]
+        movzx   di, byte [hid_count]
+        mov     cx, 0100h               ; CL: highest DCI, CH: next ring
+        mov     dword [xh_hadd], 1      ; add flags: the slot context
+.p1:    mov     al, [hid_count]
+        add     al, [hid_new]
+        mov     dx, di
+        cmp     dl, al
+        jae     .p1e
+        cmp     ch, 4
+        jae     .p1n
+        mov     [hidf_ring+di], ch
+        inc     ch
+        mov     al, [hidf_ep+di]
+        and     al, 0Fh
+        shl     al, 1
+        inc     al
+        mov     [hidf_dci+di], al
+        cmp     al, cl
+        jbe     .nmax
+        mov     cl, al
+.nmax:  push    cx
+        mov     cl, al
+        mov     edx, 1
+        shl     edx, cl
+        or      [xh_hadd], edx
+        pop     cx
+.p1n:   inc     di
+        jmp     .p1
+.p1e:   mov     ch, cl                  ; context entries: the highest DCI
+        call    xh_inslot
+        mov     ax, XH_INCTX
+        call    xa
+        mov     eax, [xh_hadd]
+        mov     [di+4], eax
+        movzx   di, byte [hid_count]
+.p2:    mov     al, [hid_count]
+        add     al, [hid_new]
+        mov     dx, di
+        cmp     dl, al
+        jae     .p2e
+        cmp     byte [hidf_ring+di], 0
+        je      .p2n
+        push    di
+        mov     bx, di
+        mov     dl, [hidf_dci+bx]
+        mov     dh, 7                   ; interrupt IN
+        add     bx, bx
+        mov     ax, [hidf_mps+bx]
+        shr     bx, 1
+        mov     cx, si
+        shl     cx, 2
+        add     cl, [hidf_ring+bx]
+        push    bx
+        call    xh_inep
+        pop     bx
+        movzx   ax, byte [hidf_dev+bx]  ; interval: 2^n x 125 us
+        push    bx
+        mov     bx, ax
+        mov     al, [usbd_speed+bx]
+        pop     bx
+        mov     dl, 3                   ; full / low speed: 1 ms
+        cmp     al, 2
+        jb      .iv
+        mov     dl, [hidf_ival+bx]      ; high / super speed: bInterval - 1
+        dec     dl
+        cmp     dl, 15
+        jbe     .iv
+        mov     dl, 3
+.iv:    movzx   eax, dl
+        shl     eax, 16
+        mov     [di], eax
+        mov     eax, [di+4]             ; max payload per interval: one
+        shr     eax, 16                 ; packet; average TRB length too
+        mov     edx, eax
+        shl     edx, 16
+        or      eax, edx
+        mov     [di+16], eax
+        pop     di
+.p2n:   inc     di
+        jmp     .p2
+.p2e:   call    xh_clr_trb
+        mov     ax, XH_INCTX
+        call    xa
+        mov     [xh_trb], eax
+        mov     eax, XT_CONFIG_EP
+        call    xh_slotcmd
+        cmp     al, XC_SUCCESS
+        je      .ok
+        movzx   di, byte [hid_count]    ; failed: no pipes for these
+        mov     cl, [hid_new]
+        xor     ch, ch
+        jcxz    .ok
+.clr:   mov     byte [hidf_ring+di], 0
+        inc     di
+        loop    .clr
+.ok:    popa
+.ret:   ret
+
+xh_hadd         dd      0
