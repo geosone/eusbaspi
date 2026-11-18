@@ -80,7 +80,7 @@ and in `AUTOEXEC.BAT` the mouse driver for a PS/2 mouse as usual (Microsoft `MOU
 Linux (or any system with the tools), GNU make:
 - [NASM](https://nasm.us) for `EUSBASPI.SYS`, `EUSBVXD.386` and the tools,
 - Open Watcom (`WATCOM=/opt/watcom`): the linker for `EUSBVXD.386`, the compiler for `USBSYNC.EXE`,
-- for the package: the [GeosOne DOS Installer](https://github.com/geosone/gdi) 1.14 (`../gdi/build/INSTALL.EXE`, or `make package GDI=path`), the OpenASPI drivers (`make` in [OpenAspi](https://github.com/geosone/OpenAspi): `../OpenAspi/build/dos`, or `OPENASPI=dir`) and SHSUCDX/CDAUDIO (`install/mkpkg.sh` in [shsucd](https://github.com/geosone/shsucd): `../shsucd/build/pkg`, or `SHSUCD=dir`).
+- for the package: the [GeosOne DOS Installer](https://github.com/geosone/gdi) 1.16.5 (`../gdi/build/INSTALL.EXE`, or `make package GDI=path`), the OpenASPI drivers (`make` in [OpenAspi](https://github.com/geosone/OpenAspi): `../OpenAspi/build/dos`, or `OPENASPI=dir`) and SHSUCDX/CDAUDIO (`install/mkpkg.sh` in [shsucd](https://github.com/geosone/shsucd): `../shsucd/build/pkg`, or `SHSUCD=dir`).
 
 | Command | |
 |---|---|
