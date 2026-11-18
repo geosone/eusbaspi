@@ -298,6 +298,27 @@ reg_rd:
 ; Windows 3.x enhanced mode: through the V86 API of EUSBVXD.386
 EUSBVXD_ID      equ     3BD5h
 vxd_entry       dd      0
+
+; Windows 3.x enhanced mode running (its INT 2Fh 1605h / 1606h broadcasts).
+; Only then are the Windows calls (INT 2Fh 1681h/1682h/1684h) made: other
+; V86 monitors (EMM386, JEMM) don't need them, and a DOS extended program
+; that hooks INT 2Fh itself (CauseWay: NTFS4DOS) can't take an INT 2Fh in
+; the middle of an INT 13h call it made.
+win_enh         db      0
+old_int2f       dd      0
+int2f_hook:
+        cmp     ax, 1605h               ; Windows starts
+        je      .start
+        cmp     ax, 1606h               ; Windows ends
+        jne     .chain
+        test    dl, 1                   ; standard mode (DOSX): not ours
+        jnz     .chain
+        mov     byte [cs:win_enh], 0
+        jmp     .chain
+.start: test    dl, 1
+        jnz     .chain
+        mov     byte [cs:win_enh], 1
+.chain: jmp     far [cs:old_int2f]
 rd_vxd: push    edx
         movzx   edx, ax
         add     edx, [cs:abar]
@@ -693,6 +714,8 @@ aspi_entry:
         ; Windows 3.x enhanced mode: no switch to another VM while we are
         ; in here (one driver state, one internal stack for all DOS boxes)
         xor     di, di
+        cmp     byte [cs:win_enh], 0
+        je      .nocs
         smsw    ax
         test    al, 1
         jz      .nocs
@@ -761,6 +784,8 @@ aspi_entry:
         smsw    ax
         test    al, 1
         jz      .real
+        cmp     byte [win_enh], 0       ; other V86 monitors: INT 15h
+        je      .go
         push    es
         xor     di, di
         mov     es, di
@@ -2595,6 +2620,15 @@ init:
 %ifdef USB_BUILD
         call    amis_install
 %endif
+        push    es                      ; Windows start / end
+        mov     ax, 352Fh
+        int     21h
+        mov     [old_int2f], bx
+        mov     [old_int2f+2], es
+        pop     es
+        mov     dx, int2f_hook
+        mov     ax, 252Fh
+        int     21h
         xor     bx, bx                  ; /H: the slots still empty, which
 .empty: cmp     bl, [dev_count]         ; ASPIDISK/ASPIFDD give letters too
         jae     .listed
