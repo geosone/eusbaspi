@@ -9,7 +9,7 @@
 - hot plugging (`/H`): sticks can be changed while DOS runs
 - USB disks the BIOS offers as INT 13h hard disks are taken over: their drive letters keep working
 - Windows 3.x DOS boxes (with `EUSBVXD.386` for OHCI, EHCI and xHCI)
-- USB mice (`USBHID.SYS`): as the PS/2 mouse for the DOS mouse drivers, on all four controller types
+- USB mice and keyboards (`USBHID.SYS`): as the PS/2 mouse for the DOS mouse drivers and as the keyboard, on all four controller types
 - together with other ASPI managers ([AHCIASPI](https://github.com/geosone/ahciaspi), ASPI8DOS, ...): EUSBASPI chains to a manager loaded before it
 
 **Status:** first version. Tested in QEMU and VirtualBox (all four controller types, hubs, hot plugging, Windows for Workgroups 3.11), not yet on real hardware. Reports with the output of `DEVICE=EUSBASPI.SYS /V` and `ASPITEST` are welcome.
@@ -24,9 +24,9 @@ Download the ZIP of the [latest release](https://github.com/geosone/eusbaspi/rel
 | CD/DVD drives (on) | `ASPICDA.SYS /D:ASPICDA0`; [SHSUCDX](https://github.com/geosone/shsucd) in the place of `MSCDEX` (MS-DOS) or `NWCDEX` (DR-DOS) in `AUTOEXEC.BAT`, with digital CD audio through [VSBHDA](https://github.com/geosone/VSBHDA) (`CDAUDIO.COM`) |
 | ZIP, LS-120, LS-240, Clik!, Jaz | `ASPIFDD.SYS` |
 | Tape drives | `ASPITAP.SYS`, `TAPECTL.COM` |
-| USB mice | `USBHID.SYS` |
+| USB mice and keyboards | `USBHID.SYS` |
 
-With EUSBASPI already loaded, `ASPISCAN.COM` finds ZIP/LS-120 and tape drives and `HIDINFO.COM` USB mice, and they preselect their options. OpenASPI and SHSUCD have installers of their own; all of them share `C:\OPENASPI`, so each can be installed alone or together.
+With EUSBASPI already loaded, `ASPISCAN.COM` finds ZIP/LS-120 and tape drives and `HIDINFO.COM` USB mice and keyboards, and they preselect their options. OpenASPI and SHSUCD have installers of their own; all of them share `C:\OPENASPI`, so each can be installed alone or together.
 
 **CD-ROM.** The installer takes the CD-ROM extension in this order: `SHSUCDX.COM` of the installation disk, else `SHSUCDX`, `MSCDEX.EXE`, `NWCDEX.EXE` on the computer. An existing `MSCDEX`/`NWCDEX` line keeps its drivers and drive letters, starts SHSUCDX instead (SHSUCDX ignores the MSCDEX options it doesn't have) and gets `/D:ASPICDA0`; `INSTALL /U` puts MSCDEX or NWCDEX back.
 
@@ -49,16 +49,18 @@ and `SYSTEM.INI` of Windows 3.x, `[386Enh]`:
 
 DOS, SMARTDRV and Windows keep written data in caches, and many sticks have a write cache of their own. Before unplugging a drive run `USBSYNC` (DOS, DOS box) or `USBSYNC.EXE` (Windows 3.1x, e.g. as a Program Manager icon). It writes the DOS buffers (and the 32-bit file access cache of Windows for Workgroups 3.11), the SMARTDRV cache and the drives' write caches (`SYNCHRONIZE CACHE` through ASPI) and then tells you that the drives can be unplugged. `/E` also stops (ejects) them, `/Q` shows messages only on errors, `/A` (DOS) uses all ASPI adapters.
 
-## USB mice: USBHID
+## USB mice and keyboards: USBHID
 
-EUSBASPI takes the USB controllers over, and with them the USB mouse a BIOS may have driven (SeaBIOS, "USB legacy" mouse support). It keeps the HID devices (boot interface, mice) configured for client drivers; `USBHID.SYS`, loaded after it, gives them to DOS as the PS/2 mouse of the BIOS (INT 15h AX=C200h-C207h):
+EUSBASPI takes the USB controllers over, and with them the USB mouse and keyboard a BIOS may have driven (SeaBIOS, "USB legacy" support). It keeps the HID devices (boot interface: mice, keyboards) configured for client drivers; `USBHID.SYS`, loaded after it, gives them to DOS as the PS/2 mouse of the BIOS (INT 15h AX=C200h-C207h):
 
     DEVICE=C:\OPENASPI\EUSBASPI.SYS
     DEVICE=C:\OPENASPI\USBHID.SYS [/V]
 
 and in `AUTOEXEC.BAT` the mouse driver for a PS/2 mouse as usual (Microsoft `MOUSE`, CuteMouse, Logitech `MOUSE`). All USB mice work at once (their movements and buttons together), on UHCI, OHCI, EHCI and xHCI (`/X`). USBHID reads them 18 times a second (timer interrupt) and puts the packets into the keyboard controller (8042 command D3h), so they reach the mouse driver with IRQ 12 like those of a PS/2 mouse; drivers that read port 60h themselves (Logitech) take them too. Without a keyboard controller USBHID calls the IRQ 12 handler itself. A USB mouse plugged in later is not seen yet (no hot plugging for HID devices). `/V` lists the mice.
 
-`HIDINFO` lists the HID devices EUSBASPI keeps (`/R`: the reports of the first mouse for 8 seconds; `/Q /MOUSE`: errorlevel 0 if there is a USB mouse).
+USB keyboards type through the keyboard controller as well (8042 command D2h): each key becomes the scan codes (set 1) a PS/2 keyboard sends, with IRQ 1, so the BIOS, `KEYB` (load it after `USBHID.SYS`, e.g. in `AUTOEXEC.BAT`) and programs with an INT 09h handler of their own get them as from a PS/2 keyboard. USBHID repeats a held key itself (after half a second, 12 times a second; USB keyboards don't repeat) and sets the keyboard's Num, Caps and Scroll Lock LEDs from the BIOS's shift state. Keyboards need a keyboard controller (8042); without one USBHID leaves them alone. Like the mice they are read 18 times a second.
+
+`HIDINFO` lists the HID devices EUSBASPI keeps (`/R`: the reports of the first mouse for 8 seconds; `/Q /MOUSE`: errorlevel 0 if there is a USB mouse, `/Q /KBD` a USB keyboard, both together either).
 
 ## Switches
 

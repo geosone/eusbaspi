@@ -5,6 +5,7 @@
 ;   HIDINFO /R       and the reports of the first mouse for 8 seconds
 ;   HIDINFO /Q /MOUSE  no output; errorlevel 0 if there is a USB mouse
 ;                      (boot interface), else 1 (for INSTALL's [Detect])
+;   HIDINFO /Q /KBD    the same for a USB keyboard; both: mouse or keyboard
         org     100h
         mov     si, 81h                 ; options
 .opt:   lodsb
@@ -21,8 +22,11 @@
         jne     .o3
         mov     byte [reports], 1
 .o3:    cmp     al, 'M'
-        jne     .opt
+        jne     .o4
         mov     byte [wantm], 1
+.o4:    cmp     al, 'K'
+        jne     .opt
+        mov     byte [wantk], 1
         jmp     .opt
 .opte:  xor     ax, ax                  ; AMIS handler at all?
         mov     es, ax
@@ -150,8 +154,9 @@ found:  mov     ah, bh
         call    puts
 .nx:    inc     bl
         jmp     .f
-.end:   cmp     byte [wantm], 0
-        jne     .m0
+.end:   mov     al, [wantm]
+        or      al, [wantk]
+        jnz     .m0
         cmp     byte [reports], 0
         je      .quit
         ; the first mouse: start its pipe and show its reports for 8 s
@@ -169,11 +174,18 @@ found:  mov     ah, bh
         jne     .mn
         cmp     byte [rec+3], 2
         je      .mouse
+        cmp     byte [rec+3], 1
+        jne     .mn
+        cmp     byte [wantk], 0
+        jne     .found                  ; /KBD: there is one
 .mn:    inc     bl
         jmp     .m
 .mouse: cmp     byte [wantm], 0
-        je      .show
-        mov     ax, 4C00h               ; /MOUSE: there is one
+        jne     .found                  ; /MOUSE: there is one
+        cmp     byte [wantk], 0         ; /KBD alone: not a mouse
+        jne     .mn
+        jmp     .show
+.found: mov     ax, 4C00h
         int     21h
 .show:  mov     [mfunc], bl
         mov     ah, 3
@@ -229,7 +241,8 @@ found:  mov     ah, bh
         mov     bl, [mfunc]
         mov     ah, 5
         call    far [api]
-.quit:  mov     al, [wantm]         ; /MOUSE and none: 1
+.quit:  mov     al, [wantm]         ; /MOUSE or /KBD and none: 1
+        or      al, [wantk]
         mov     ah, 4Ch
         int     21h
 
@@ -312,6 +325,7 @@ api     dd 0
 quiet   db 0
 reports db 0
 wantm   db 0
+wantk   db 0
 mfunc   db 0
 t0      dw 0
 count   db 0
