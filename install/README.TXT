@@ -113,7 +113,7 @@ drives (SYNCHRONIZE CACHE), then says that the drives can be unplugged.
 Switches
 --------
 
-    DEVICE=EUSBASPI.SYS [/F] [/H[:n]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
+    DEVICE=EUSBASPI.SYS [/F] [/H[:n] [/RMB]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
 
   /F       Flat: every LUN an ASPI target of its own, as in 0.5.
            By default each USB device is one ASPI target and its LUNs
@@ -125,7 +125,12 @@ Switches
            that get drive letters from ASPIFDD (or Adaptec's ASPIDISK)
            even when they are empty; setup then also installs ASPIFDD;
            sticks can be plugged in and out while DOS runs.  The driver
-           stays larger in memory.
+           stays larger in memory.  The devices keep their removable
+           bit (RMB) as the firmware reports it; the OpenASPI drivers
+           also check fixed disks for another device in their slot.
+  /RMB     With /H: every device reported removable, for ASPI drivers
+           that look for media changes only on removable drives
+           (Adaptec's ASPIDISK).
   /ID:name ASPI manager name reported to the clients (up to 16
            characters, default EUSBASPI).
   /M:x     Access to the controller registers: F = flat real mode (not

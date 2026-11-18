@@ -174,7 +174,7 @@ mgr_id          db      'AHCIASPI        '      ; 16 bytes, /ID: overrides
 ha_ident        db      'AHCI SATA       '      ; 16 bytes
 %endif
 ha_unique       dw      0001h           ; buffer alignment mask (word)
-                db      0               ; reserved
+ha_uflags       db      0               ; reserved; 80h: /H, targets hot plug
                 db      MAX_DEV         ; max targets
                 dd      10000h          ; max transfer length
                 times 8 db 0
@@ -231,6 +231,7 @@ prev_count      db      0               ; its host adapters = our HA number
 
 ; ASPI call state
 in_aspi         db      0
+opt_rmb         db      0               ; /RMB
 old_ss          dw      0
 old_sp          dw      0
 srb_ptr         dd      0
@@ -1496,8 +1497,10 @@ inquiry_fixup:
         push    es
         push    di
         les     di, [s_buf]
-        cmp     byte [hot_slots], 0     ; hot plug slots are removable, so
-        je      .notslot                ; that DOS asks for media changes
+        cmp     byte [opt_rmb], 0       ; /RMB: hot plug slots are removable,
+        je      .notslot                ; for drivers that only ask removable
+        cmp     byte [hot_slots], 0     ; drives for media changes (Adaptec)
+        je      .notslot
         or      byte [es:di+1], 80h
 .notslot:
         cmp     byte [inq_scsi2], 0
@@ -2672,6 +2675,7 @@ parse_cmdline:
 .opt_x: mov     byte [opt_xhci], 1
         jmp     .args
 .opt_h: mov     byte [hot_slots], 2     ; /H or /H:n hot plug slots
+        mov     byte [ha_uflags], 80h   ; (OpenASPI: fixed disks checked too)
         cmp     byte [es:si], ':'
         jne     .args
         inc     si
@@ -2698,8 +2702,14 @@ parse_cmdline:
         jmp     .args
 .opt_r: mov     di, kw_rawinq           ; /RAWINQ
         call    match_kw
-        jc      .bad
+        jc      .opt_rmb
         mov     byte [inq_scsi2], 0
+        jmp     .args
+.opt_rmb:
+        mov     di, kw_rmb              ; /RMB
+        call    match_kw
+        jc      .bad
+        mov     byte [opt_rmb], 1
         jmp     .args
 .opt_i: mov     al, [es:si]             ; /ID:name
         call    upcase
@@ -2752,6 +2762,7 @@ match_kw:
         ret
 
 kw_rawinq       db      'AWINQ', 0
+kw_rmb          db      'MB', 0
 
 is_eol: cmp     al, 0
         je      .y

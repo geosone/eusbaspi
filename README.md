@@ -62,11 +62,12 @@ and in `AUTOEXEC.BAT` the mouse driver for a PS/2 mouse as usual (Microsoft `MOU
 
 ## Switches
 
-    DEVICE=EUSBASPI.SYS [/F] [/H[:n]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
+    DEVICE=EUSBASPI.SYS [/F] [/H[:n] [/RMB]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
 
 | Switch | |
 |---|---|
-| `/H[:n]` | hot plugging: n drive slots (default 2) that get drive letters from ASPIFDD (OpenASPI) or Adaptec's ASPIDISK even when empty (listed at start as "empty USB slot"; with one device and `/H:1` there is no empty one); the driver stays larger in memory |
+| `/H[:n]` | hot plugging: n drive slots (default 2) that get drive letters from ASPIFDD (OpenASPI) or Adaptec's ASPIDISK even when empty (listed at start as "empty USB slot"; with one device and `/H:1` there is no empty one); the driver stays larger in memory. The devices keep the removable bit (RMB) their firmware reports; EUSBASPI marks the adapter as hot plug (bit 7 of byte 2 of the HA inquiry's unique parameters), and the OpenASPI drivers then also ask fixed disks at each media check whether another device took their slot (UNIT ATTENTION, medium may have changed) |
+| `/RMB` | with `/H`: every device is reported removable (as up to 0.13), for ASPI drivers that check only removable drives for media changes (Adaptec's ASPIDISK) |
 | `/F` | flat numbering: every LUN is an ASPI target of its own, as in 0.5. By default each USB device is one ASPI target and its LUNs (card reader slots, CD+disk sticks) are ASPI LUNs, so old drivers that only scan targets 0-7 (e.g. Adaptec ASPIDISK) still see all disks; `/L` selects this default and is still accepted. Use `/F` for a driver that only looks at LUN 0 |
 | `/ID:name` | ASPI manager name (up to 16 characters, default `EUSBASPI`) |
 | `/M:x` | register access: `F` flat real mode (not with EMM386 etc.), `B` BIOS INT 15h AH=87h; default: one that works |
