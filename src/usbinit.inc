@@ -7,6 +7,37 @@
 ; ASPI target.
 ;=============================================================================
 
+; EAX = the address an XMS lock returned for a block of ECX bytes -> EAX =
+; the physical address of its start, for a controller's DMA; CF if the block
+; is not one physically contiguous range.  XMS 3.0 makes the lock's address a
+; linear one: under a memory manager that pages (386MAX maps extended memory
+; elsewhere, its first 64 KB above the HMA for one) only VDS knows where the
+; memory is.  Without VDS there is no paging, so the address is physical.
+xms_phys:
+        cmp     byte [vds_ok], 0
+        je      .ok
+        push    es
+        push    di
+        push    dx
+        mov     [dds_size], ecx
+        mov     [dds_off], eax
+        mov     word [dds_seg], 0
+        mov     word [dds_bufid], 0
+        push    cs
+        pop     es
+        mov     di, dds
+        mov     dx, 000Ch               ; no buffer, no remap
+        mov     ax, 8103h               ; lock DMA region (stays locked)
+        int     4Bh
+        jc      .out
+        mov     eax, [dds_phys]
+.out:   pop     dx
+        pop     di
+        pop     es
+        ret
+.ok:    clc
+        ret
+
 ; next free DMA page (cleared, locked) -> AX = offset from ud_base,
 ; EDX = physical address; CF if the DMA area is used up
 alloc_page:
@@ -982,13 +1013,18 @@ xh_scratchpad:
         or      ax, ax
         jz      .fail
         mov     [xh_xms], dx
-        mov     ah, 0Ch                 ; lock: DX:BX = physical address
+        mov     ah, 0Ch                 ; lock: DX:BX = linear address
         call    far [xms_entry]
         or      ax, ax
         jz      .fail
         mov     ax, dx
         shl     eax, 16
         mov     ax, bx
+        movzx   ecx, word [xh_nscr]     ; the block's size
+        add     ecx, 2
+        shl     ecx, 12
+        call    xms_phys
+        jc      .fail
         mov     edx, eax
         add     eax, 0FFFh
         and     eax, ~0FFFh
@@ -1166,13 +1202,16 @@ xh_ctx_xms:
         or      ax, ax
         jz      .out
         mov     [xh_ctx_xh], dx
-        mov     ah, 0Ch                 ; lock: DX:BX = physical address
+        mov     ah, 0Ch                 ; lock: DX:BX = linear address
         call    far [xms_entry]
         or      ax, ax
         jz      .free
         mov     ax, dx
         shl     eax, 16
         mov     ax, bx
+        mov     ecx, XHCI_DEV * XH_CTX_SIZE + 1000h
+        call    xms_phys
+        jc      .unlock
         mov     edx, eax
         add     eax, 0FFFh
         and     eax, ~0FFFh
@@ -1180,6 +1219,10 @@ xh_ctx_xms:
         sub     eax, edx
         mov     [xh_ctx_off], eax
         jmp     .out
+.unlock:
+        mov     dx, [xh_ctx_xh]
+        mov     ah, 0Dh
+        call    far [xms_entry]
 .free:  mov     dx, [xh_ctx_xh]
         mov     ah, 0Ah
         call    far [xms_entry]
@@ -2977,7 +3020,7 @@ fl_alloc:
         jne     .conv
         mov     [hx_move+10], dx        ; destination handle
         push    dx
-        mov     ah, 0Ch                 ; lock -> DX:BX linear = physical
+        mov     ah, 0Ch                 ; lock -> DX:BX linear address
         call    far [xms_entry]
         pop     cx
         cmp     ax, 1
@@ -2985,6 +3028,12 @@ fl_alloc:
         shl     edx, 16
         mov     dx, bx
         mov     eax, edx
+        push    ecx
+        mov     ecx, 2000h
+        call    xms_phys
+        pop     ecx
+        jc      .xunlock
+        mov     edx, eax
         add     eax, 0FFFh
         and     ax, 0F000h
         push    eax
@@ -3003,6 +3052,12 @@ fl_alloc:
         jne     .fail                   ; (the block stays allocated)
         clc
         ret
+.xunlock:
+        mov     dx, cx
+        mov     ah, 0Dh
+        push    cx
+        call    far [xms_entry]
+        pop     cx
 .xfree: mov     dx, cx
         mov     ah, 0Ah
         call    far [xms_entry]

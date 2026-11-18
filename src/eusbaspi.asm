@@ -400,9 +400,100 @@ bios_move:
         mov     cx, 2                   ; two words
         mov     ah, 87h
         int     15h
+%ifdef E9LOG
+        call    trace_87
+%endif
         pop     es
         popad
         ret
+
+%ifdef E9LOG
+; after INT 15h AH=87h: the first 32 moves, then every failed one, as
+;   87 n=<count> s=<source> d=<destin> r=<AH> c=<CF>
+trace_87:
+        pushf
+        pushad
+        setc    bl
+        inc     word [cs:t87_count]
+        cmp     word [cs:t87_count], 16
+        jbe     .log
+        or      bl, bl
+        jnz     .log
+        or      ah, ah
+        jnz     .log
+        mov     edx, [cs:gdt15_src+2]   ; base 0-23 of both sides
+        and     edx, 0FFF000h
+        mov     ecx, [cs:gdt15_dst+2]
+        and     ecx, 0FFF000h
+        cmp     edx, [cs:t87_last]
+        jne     .log
+        cmp     ecx, [cs:t87_last+4]
+        je      .done
+.log:   mov     edx, [cs:gdt15_src+2]
+        and     edx, 0FFF000h
+        mov     [cs:t87_last], edx
+        mov     edx, [cs:gdt15_dst+2]
+        and     edx, 0FFF000h
+        mov     [cs:t87_last+4], edx
+        mov     bh, ah
+        mov     al, '8'
+        call    e9_putc
+        mov     al, '7'
+        call    e9_putc
+        mov     al, ' '
+        call    e9_putc
+        mov     ax, [cs:t87_count]
+        xchg    al, ah
+        call    e9_hex8
+        xchg    al, ah
+        call    e9_hex8
+        mov     al, ' '
+        call    e9_putc
+        mov     di, gdt15_src
+        call    t87_base
+        mov     al, ' '
+        call    e9_putc
+        mov     di, gdt15_dst
+        call    t87_base
+        mov     al, ' '
+        call    e9_putc
+        mov     di, [cs:scratch_ptr]
+        mov     al, [cs:di+3]
+        call    e9_hex8
+        mov     al, [cs:di+2]
+        call    e9_hex8
+        mov     al, [cs:di+1]
+        call    e9_hex8
+        mov     al, [cs:di]
+        call    e9_hex8
+        mov     al, 'r'
+        mov     ah, bh
+        call    e9_field
+        mov     al, 'c'
+        mov     ah, bl
+        call    e9_field
+        mov     al, 10
+        call    e9_putc
+.done:  popad
+        popf
+        ret
+
+; the 32-bit base of the descriptor at CS:DI, in hex
+t87_base:
+        mov     al, [cs:di+7]
+        call    e9_hex8
+        mov     al, [cs:di+4]
+        call    e9_hex8
+        mov     al, [cs:di+3]
+        call    e9_hex8
+        mov     al, [cs:di+2]
+        call    e9_hex8
+        ret
+
+t87_count       dw      0
+t87_last        dd      0, 0
+
+%endif
 
 ;-----------------------------------------------------------------------------
 ; Flat real mode: (re)load FS with a 4 GB limit.  Called on every ASPI entry
