@@ -1,4 +1,4 @@
-EUSBASPI 0.14 - ASPI manager for USB mass storage
+EUSBASPI 0.15 - ASPI manager for USB mass storage
 ================================================
 
 EUSBASPI.SYS is an ASPI manager (device SCSIMGR$) for DOS.  It makes USB
