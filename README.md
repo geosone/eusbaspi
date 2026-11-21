@@ -25,6 +25,7 @@ Download the ZIP of the [latest release](https://github.com/geosone/eusbaspi/rel
 | ZIP, LS-120, LS-240, Clik!, Jaz | `ASPIFDD.SYS` |
 | Tape drives | `ASPITAP.SYS`, `TAPECTL.COM` |
 | USB mice and keyboards | `USBHID.SYS` |
+| Controllers above 4 GB (off) | `PCI4G.SYS` before `EUSBASPI.SYS` |
 
 With EUSBASPI already loaded, `ASPISCAN.COM` finds ZIP/LS-120 and tape drives and `HIDINFO.COM` USB mice and keyboards, and they preselect their options. OpenASPI and SHSUCD have installers of their own; all of them share `C:\OPENASPI`, so each can be installed alone or together.
 
@@ -62,6 +63,16 @@ USB keyboards type through the keyboard controller as well (8042 command D2h): e
 
 `HIDINFO` lists the HID devices EUSBASPI keeps (`/R`: the reports of the first mouse for 8 seconds; `/Q /MOUSE`: errorlevel 0 if there is a USB mouse, `/Q /KBD` a USB keyboard, both together either).
 
+## Controllers above 4 GB: PCI4G
+
+With "Above 4G Decoding" on in the BIOS setup, the firmware may place a USB controller's registers (a 64-bit BAR) above 4 GB, out of reach of DOS; EUSBASPI then reports `BAR above 4 GB (load PCI4G.SYS first)`. `PCI4G.SYS`, loaded before `EUSBASPI.SYS` (and `AHCIASPI.SYS`), moves the BARs of USB (class 0C03h) and mass storage controllers (class 01h) into free space below 4 GB and stays 0 bytes resident:
+
+    DEVICE=C:\OPENASPI\PCI4G.SYS [/V]
+
+The free space is the gap between the end of RAM below 4 GB (INT 15h E820h) and FEC00000h, less the reserved E820h ranges and every BAR, expansion ROM and bridge window; BARs are sized with memory decoding off. A device on bus 0 gets the highest free address that fits, one behind a bridge an address in the bridge's 32-bit memory window (the bridges are not reprogrammed, so a full window means it stays). Graphics cards and other devices are left alone. `/V` shows the free range and the BARs left above 4 GB. Tested in QEMU (`test/pci4g.sh`: `BARHIGH.SYS` moves the xHCI's BAR above 4 GB first, on bus 0 and behind a `pci-bridge`, also under JEMMEX), not yet on real hardware.
+
+Chipset fixes applied before the controllers are started (from Linux's `pci-quirks.c` and `ehci-pci.c`): the AMD-8111 EHCI is not used (erratum; its OHCI companions keep the ports), "async park" off on the ATI/AMD SB600 and SB700 (A12) EHCI, the VIA VT6212's EHCI sleep time; with `/X`, the switchable ports of Intel 7/8/9 series and Bay Trail xHCI controllers are routed from EHCI to xHCI (USB 3 speed), and that xHCI is started before the EHCI controllers. Not tried on these chipsets yet (QEMU has none of them).
+
 ## Switches
 
     DEVICE=EUSBASPI.SYS [/F] [/H[:n] [/RMB]] [/ID:name] [/M:F|B] [/T:s] [/X] [/Q] [/V]
@@ -86,7 +97,7 @@ Linux (or any system with the tools), GNU make:
 
 | Command | |
 |---|---|
-| `make` | `build/EUSBASPI.SYS`, `build/USBHID.SYS`, `build/HIDINFO.COM`, `build/MTEST.COM` (INT 33h test), `build/EUSBVXD.386`, `build/USBSYNC.COM`, `build/USBSYNCW.EXE` (Windows, installed as `USBSYNC.EXE`), `build/ASPITEST.COM` |
+| `make` | `build/EUSBASPI.SYS`, `build/PCI4G.SYS`, `build/USBHID.SYS`, `build/HIDINFO.COM`, `build/MTEST.COM` (INT 33h test), `build/EUSBVXD.386`, `build/USBSYNC.COM`, `build/USBSYNCW.EXE` (Windows, installed as `USBSYNC.EXE`), `build/ASPITEST.COM` |
 | `make package` | `build/pkg/`, `build/eusbaspi.zip` and the disk image `build/EUSBASPI.IMG` (mtools) |
 
 ## Native C mass storage
@@ -108,7 +119,7 @@ Tested in QEMU on x86-64, i686 and AArch64: on xHCI, EHCI, OHCI, UHCI and an EHC
 
 `test/install.sh` installs the package (`make package`) in QEMU with MS-DOS 7.1 (`BOOTIMG`, a boot floppy with XMGR, UDVD2 and MSCDEX): an IDE CD with MSCDEX before; after setup a USB CD and a USB stick on EHCI, both CDs with letters from SHSUCDX; `INSTALL /U` restores `CONFIG.SYS` and the MSCDEX line.
 
-`test/run.sh` (QEMU, `USBHC=uhci|ohci|ehci|xhci`), `test/vbox.sh` (VirtualBox), `test/win311.sh` (Windows for Workgroups 3.11) and `test/mm.sh` (memory managers) need your own DOS boot disk image and, for some tests, `ASPIDISK.SYS`.
+`test/run.sh` (QEMU, `USBHC=uhci|ohci|ehci|xhci`), `test/pci4g.sh` (PCI4G), `test/vbox.sh` (VirtualBox), `test/win311.sh` (Windows for Workgroups 3.11) and `test/mm.sh` (memory managers) need your own DOS boot disk image and, for some tests, `ASPIDISK.SYS`.
 
 ## License
 

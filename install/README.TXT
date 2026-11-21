@@ -157,10 +157,32 @@ Switches
   /V       Verbose: show the controllers, ports and devices.
 
 
+Controllers above 4 GB: PCI4G
+------------------------------
+
+With "Above 4G Decoding" on in the BIOS setup, the firmware may put the
+registers of a USB controller above 4 GB, where DOS drivers cannot reach
+them; EUSBASPI then says "BAR above 4 GB (load PCI4G.SYS first)".
+PCI4G.SYS, loaded before EUSBASPI.SYS (and AHCIASPI.SYS), moves the
+registers of USB and disk controllers into free space below 4 GB.  It
+does that when it is loaded and stays 0 bytes resident:
+
+    DEVICE=C:\OPENASPI\PCI4G.SYS [/V]
+    DEVICE=C:\OPENASPI\EUSBASPI.SYS ...
+
+  /V       Also show the free space and the BARs left above 4 GB.
+
+Other devices (graphics cards) stay where the firmware put them.  A
+controller behind a PCI bridge gets an address in the bridge's memory
+window; when there is no room the message says so.  Turning "Above 4G
+Decoding" off in the BIOS setup does the same for all devices.
+
+
 Files
 -----
 
   EUSBASPI.SYS   the driver
+  PCI4G.SYS      moves controller registers placed above 4 GB below it
   EUSBVXD.386    Windows 3.x enhanced mode helper (memory mapped registers)
   USBSYNC.COM    write all cached data before unplugging (DOS)
   USBSYNC.EXE    the same for Windows 3.1x

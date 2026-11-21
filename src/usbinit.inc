@@ -165,7 +165,13 @@ usb_scan:
         jae     .init
         inc     bh
         jmp     .dev
-.init:  ; EHCI first: it hands full and low speed devices to its companion
+.init:  ; An Intel xHCI that takes the EHCI's ports over comes first, so
+        ; the devices on them are not enumerated on EHCI and then pulled away
+        cmp     byte [xh_route_first], 0
+        je      .ehci
+        mov     al, HC_XHCI
+        call    usb_init_type
+.ehci:  ; EHCI first: it hands full and low speed devices to its companion
         ; controllers, which are enumerated afterwards
         mov     al, HC_EHCI
         call    usb_init_type
@@ -173,6 +179,8 @@ usb_scan:
         call    usb_init_type
         mov     al, HC_UHCI
         call    usb_init_type
+        cmp     byte [xh_route_first], 0
+        jne     .out
         mov     al, HC_XHCI
         call    usb_init_type
 .out:   ret
@@ -232,6 +240,12 @@ usb_stop_all:
 
         cmp     word [xh_op], 0         ; xHCI: stop, wait for HCHalted,
         je      .next                   ; reset (not set up: leave it)
+        mov     di, bx                  ; Intel: the ports back to EHCI
+        add     di, di
+        mov     ax, [hc_bdf+di]
+        mov     [pci_bdf], ax
+        mov     al, 0
+        call    intel_route
         mov     ax, XO_USBCMD
         call    xop_rd
         and     al, ~1
@@ -379,7 +393,9 @@ usb_found_hc:
         and     al, 7
         add     al, '0'
         call    putc
-.quiet: cmp     byte [new_hc_type], HC_OHCI
+.quiet: call    hc_quirks               ; chipset fixes, CF: not used
+        jc      .unused
+        cmp     byte [new_hc_type], HC_OHCI
         je      .ohci
         cmp     byte [new_hc_type], HC_EHCI
         je      .ohci
@@ -434,7 +450,7 @@ usb_found_hc:
         call    pci_rd
         or      ecx, ecx
         pop     ecx
-        jnz     .bad
+        jnz     .high
 .bar32:
         push    ecx
         mov     di, PCI_CMD             ; memory decode + bus master on
@@ -464,12 +480,169 @@ usb_found_hc:
         jne     .out
         mov     si, msg_bad_bar
         call    print
+        jmp     .out
+.high:  mov     si, msg_bar_high
+        jmp     .why
+.unused:
+        mov     si, msg_hc_unused
+.why:   cmp     byte [opt_quiet], 0
+        jne     .out
+        call    print
 .out:   pop     dx
         pop     bx
         ret
 
 new_hc_type     db      0
 new_hc_name     dw      0
+xh_route_first  db      0               ; an Intel xHCI that takes the EHCI ports
+
+;-----------------------------------------------------------------------------
+; hc_quirks: chipset fixes for the controller at [pci_bdf] ([pci_vendev],
+; [new_hc_type]), applied before any controller is touched.  From Linux's
+; drivers/usb/host/pci-quirks.c and ehci-pci.c.  CF = do not use it.
+;-----------------------------------------------------------------------------
+hc_quirks:
+        mov     eax, [pci_vendev]
+        cmp     byte [new_hc_type], HC_XHCI
+        je      .xhci
+        cmp     byte [new_hc_type], HC_EHCI
+        jne     .ok
+        cmp     eax, 74631022h          ; AMD-8111 EHCI: broken (erratum), its
+        je      .unused                 ; OHCI companions keep the ports
+        cmp     eax, 43861002h          ; ATI SB600 EHCI
+        je      .sbx00
+        cmp     eax, 43961002h          ; SB700 EHCI
+        je      .sbx00
+        cmp     eax, 31041106h          ; VIA VT6212
+        jne     .ok
+        mov     di, 08h                 ; revision 6xh only
+        call    pci_rdb
+        and     cl, 0F0h
+        cmp     cl, 60h
+        jne     .ok
+        mov     di, 4Bh                 ; the 1 us EHCI sleep time hogs the
+        call    pci_rdb                 ; PCI bus: bit 5 off it
+        test    cl, 20h
+        jnz     .ok
+        or      cl, 20h
+        call    pci_wrb
+        jmp     .ok
+.sbx00: ; SB600 and SB700 up to A12 (SMBus 00:14.0 revision 10h-1Fh,
+        ; 3Ah-3Bh): devices stop answering unless async park is off
+        push    word [pci_bdf]
+        mov     word [pci_bdf], 14h << 3
+        xor     di, di
+        call    pci_rd
+        mov     di, 08h
+        push    ecx
+        call    pci_rdb
+        pop     eax
+        pop     word [pci_bdf]
+        cmp     eax, 43851002h
+        jne     .ok
+        mov     al, cl
+        and     al, 0F0h
+        cmp     al, 10h
+        je      .park
+        cmp     cl, 3Ah
+        jb      .ok
+        cmp     cl, 3Bh
+        ja      .ok
+.park:  mov     di, 53h
+        call    pci_rdb
+        or      cl, 08h
+        call    pci_wrb
+        jmp     .ok
+.xhci:  cmp     byte [opt_xhci], 0
+        je      .ok
+        mov     ecx, eax
+        call    intel_switchable
+        jnc     .ok
+        mov     byte [xh_route_first], 1
+.ok:    clc
+        ret
+.unused:
+        stc
+        ret
+
+; ECX = vendor/device: CF = Intel 7/8/9 series (and Bay Trail) xHCI that
+; can take the USB 2 ports of the EHCI controllers
+intel_switchable:
+        push    si
+        push    ax
+        cmp     cx, 8086h
+        jne     .no
+        mov     si, intel_xswitch
+.id:    lodsw
+        or      ax, ax
+        jz      .no
+        push    ecx
+        shr     ecx, 16
+        cmp     ax, cx
+        pop     ecx
+        jne     .id
+        stc
+        jmp     .out
+.no:    clc
+.out:   pop     ax
+        pop     si
+        ret
+
+intel_xswitch   dw      1E31h, 8C31h, 9C31h, 8CB1h, 9CB1h, 8D31h, 0F35h, 0
+
+; route the switchable USB 2 and USB 3 ports of the Intel xHCI at [pci_bdf]
+; to it (AL = 0FFh, after the BIOS handoff) or back to EHCI (AL = 0)
+intel_route:
+        push    ax
+        xor     di, di
+        call    pci_rd
+        call    intel_switchable
+        pop     ax
+        jnc     .out
+        xor     ecx, ecx
+        or      al, al
+        jz      .pssen
+        mov     di, 0DCh                ; USB3PRM: the ports that can be enabled
+        call    pci_rd
+.pssen: mov     di, 0D8h                ; USB3_PSSEN: SuperSpeed on
+        call    pci_wr
+        or      al, al
+        jz      .xusb2
+        mov     di, 0D4h                ; XUSB2PRM: the ports that can be routed
+        call    pci_rd
+.xusb2: mov     di, 0D0h                ; XUSB2PR: USB 2 ports to xHCI
+        call    pci_wr
+        cmp     byte [opt_quiet], 0
+        jne     .out
+        or      al, al
+        jz      .out
+        mov     si, msg_xroute
+        call    print
+        mov     eax, ecx
+        call    print_hex32
+        mov     si, msg_crlf
+        call    print
+.out:   ret
+
+; DI = register -> CL, CL = value -> DI (bytes)
+pci_rdb:
+        push    ax
+        push    bx
+        mov     bx, [pci_bdf]
+        mov     ax, 0B108h
+        int     1Ah
+        pop     bx
+        pop     ax
+        ret
+pci_wrb:
+        push    ax
+        push    bx
+        mov     bx, [pci_bdf]
+        mov     ax, 0B10Bh
+        int     1Ah
+        pop     bx
+        pop     ax
+        ret
 
 ;-----------------------------------------------------------------------------
 ; UHCI: switch off the BIOS legacy support, reset, frame list with one
@@ -731,7 +904,15 @@ xhci_init:
         add     ax, 4
         call    reg_wr
 
-.reset: mov     ax, XO_USBCMD           ; stop, reset
+.reset: movzx   di, byte [init_hc]      ; Intel: the EHCI ports to xHCI
+        add     di, di
+        push    word [pci_bdf]
+        mov     ax, [hc_bdf+di]
+        mov     [pci_bdf], ax
+        mov     al, 0FFh
+        call    intel_route
+        pop     word [pci_bdf]
+        mov     ax, XO_USBCMD           ; stop, reset
         call    xop_rd
         and     al, ~1
         mov     ecx, eax
@@ -873,7 +1054,13 @@ xhci_init:
         inc     si
         jmp     .port
 .done:  ret
-.dead:  mov     si, msg_hc_dead
+.dead:  movzx   di, byte [init_hc]      ; Intel: EHCI keeps its ports
+        add     di, di
+        mov     ax, [hc_bdf+di]
+        mov     [pci_bdf], ax
+        mov     al, 0
+        call    intel_route
+        mov     si, msg_hc_dead
 .msg:   cmp     byte [opt_quiet], 0
         jne     .done
         jmp     print
@@ -2850,6 +3037,9 @@ msg_vidpid      db      ': USB device ', 0
 msg_usb_other   db      ' is not a bulk-only mass storage device', 13, 10, 0
 msg_usb_hid     db      ' is a HID device (for USBHID.SYS)', 13, 10, 0
 msg_usb_fail    db      ' does not answer', 13, 10, 0
+msg_bar_high    db      ' not used: BAR above 4 GB (load PCI4G.SYS first)', 13, 10, 0
+msg_hc_unused   db      ' not used (AMD-8111 EHCI erratum)', 13, 10, 0
+msg_xroute      db      'xHCI: Intel EHCI ports routed to xHCI, USB 2 ports ', 0
 msg_xhci_skip   db      ' skipped (/X takes it over; a USB keyboard or mouse on it', 13, 10
                 db      '    then only works again after a reboot)', 13, 10, 0
 msg_xhci_one    db      '    too many xHCI controllers', 13, 10, 0

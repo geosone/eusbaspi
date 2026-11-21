@@ -10,6 +10,8 @@
 #   DEVICES  CONFIG.SYS driver lines (| separated), default
 #            'A:\EUSBASPI.SYS <options>|A:\ASPIDISK.SYS'
 #   BATCH    AUTOEXEC.BAT commands (| separated, output > AUX)
+#   USBBUS   the controller of the stick (default usbhc, the -device of
+#            USBHC; one in QEMU_EXTRA, e.g. behind a pci-bridge in USBHC)
 #   USBBOOT=1   attach the stick at start, so the BIOS (SeaBIOS) maps it as
 #               an INT 13h disk and keeps driving the controller; by default
 #               it is plugged in after the BIOS (DELAY.SYS waits for it)
@@ -85,12 +87,12 @@ printf 'USB stick read OK\r\n' > "$OUT/USBTEST.TXT"
 mcopy -i "$OUT/usb.img@@32256" "$OUT/USBTEST.TXT" ::/
 
 USBDEV=(-drive id=usbdisk,if=none,format=raw,file="$OUT/usb.img"
-        -device usb-storage,bus=usbhc.0,drive=usbdisk)
+        -device usb-storage,bus=${USBBUS:-usbhc}.0,drive=usbdisk)
 HOTPLUG=
 if [ "${USBBOOT:-0}" != 1 ]; then
     USBDEV=()
     HOTPLUG="drive_add 0 if=none,id=usbdisk,format=raw,file=$OUT/usb.img
-device_add usb-storage,id=stick1,bus=usbhc.0,drive=usbdisk${STICKPORT:+,port=$STICKPORT}"
+device_add usb-storage,id=stick1,bus=${USBBUS:-usbhc}.0,drive=usbdisk${STICKPORT:+,port=$STICKPORT}"
     [ -n "${HOTPLUG_PRE:-}" ] && HOTPLUG="$(echo "$HOTPLUG_PRE" | tr '|' '\n')
 $HOTPLUG"
 fi

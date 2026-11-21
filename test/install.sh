@@ -10,7 +10,8 @@
 #           has a DOS drive (E:, the letter ASPIDSK reports)
 #   boot 3: INSTALL /U: CONFIG.SYS and the MSCDEX line as before
 #
-#   test/install.sh
+#   test/install.sh           OPTIONS=xxxxxxxxxxx1 test/install.sh (/O: of
+#                             the answer file; here: PCI4G.SYS on too)
 #
 # Output (build/test-install/): serial1..3.log, screen1..3.png
 set -uo pipefail
@@ -30,7 +31,7 @@ echo '@ECHO OFF|LH A:\MSCDEX.EXE /D:MSCD001 /L:R /M:10|A:\RUN.BAT' | crlf > "$OU
 echo '@ECHO OFF|ECHO --- setup > AUX|C:\PKG\INSTALL.EXE /S:A:\ANS.INI > AUX|ECHO --- CONFIG.SYS > AUX|TYPE A:\CONFIG.SYS > AUX|ECHO --- AUTOEXEC.BAT > AUX|TYPE A:\AUTOEXEC.BAT > AUX|A:\QEXIT' | crlf > "$OUT/RUN1.BAT"
 echo '@ECHO OFF|ECHO --- R: > AUX|DIR R:\ > AUX|ECHO --- S: > AUX|DIR S:\ > AUX|ECHO --- D: > AUX|DIR D:\ > AUX|ECHO --- tools > AUX|IF EXIST C:\OPENASPI\ASPICTL.EXE ECHO have ASPICTL > AUX|IF EXIST C:\OPENASPI\EJECT.EXE ECHO have EJECT > AUX|IF EXIST C:\OPENASPI\CLOSE.EXE ECHO have CLOSE > AUX|IF EXIST C:\OPENASPI\LOCK.EXE ECHO have LOCK > AUX|IF EXIST C:\OPENASPI\UNLOCK.EXE ECHO have UNLOCK > AUX|IF EXIST C:\OPENASPI\STATUS.EXE ECHO have STATUS > AUX|IF EXIST C:\OPENASPI\PROTECT.EXE ECHO have PROTECT > AUX|IF EXIST C:\OPENASPI\UNPROTEC.EXE ECHO have UNPROTEC > AUX|C:\OPENASPI\EJECT.EXE S: > AUX|IF NOT ERRORLEVEL 1 ECHO eject ok > AUX|ECHO --- end > AUX|A:\QEXIT' | crlf > "$OUT/RUN2.BAT"
 echo '@ECHO OFF|ECHO --- INSTALL /U > AUX|C:\OPENASPI\EUSBASPI\INSTALL.EXE /U > AUX|ECHO --- CONFIG.SYS > AUX|TYPE A:\CONFIG.SYS > AUX|ECHO --- AUTOEXEC.BAT > AUX|TYPE A:\AUTOEXEC.BAT > AUX|ECHO --- left > AUX|IF EXIST C:\OPENASPI\EJECT.EXE ECHO EJECT.EXE left > AUX|A:\QEXIT' | crlf > "$OUT/RUN3.BAT"
-echo '[Answers]|Dir=C:\OPENASPI' | crlf > "$OUT/ANS.INI"
+echo "[Answers]|Dir=C:\OPENASPI${OPTIONS:+|Options=$OPTIONS}" | crlf > "$OUT/ANS.INI"
 cp "$OUT/RUN1.BAT" "$OUT/RUN.BAT"
 mcopy -o -i "$OUT/a.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$OUT/RUN.BAT" "$OUT/ANS.INI" "$OUT/QEXIT.COM" :: || exit 1
 
