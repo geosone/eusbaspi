@@ -294,6 +294,7 @@ usbd_tthub      times USB_MAX_DEV db 0  ; full / low speed behind a high speed
 usbd_ttport     times USB_MAX_DEV db 0  ; hub: its address (xHCI: slot), port
 usbd_sub        times USB_MAX_DEV db 0  ; interface subclass (command set)
 usbd_proto      times USB_MAX_DEV db 0  ; 50h bulk-only, 00h CBI, 01h CB
+usbd_noresid    times USB_MAX_DEV db 0  ; 1: its CSW residues are bogus
 usbd_epint      times USB_MAX_DEV db 0  ; CBI: interrupt IN endpoint
 usbd_mpsint     times USB_MAX_DEV dw 0
 usbd_togint     times USB_MAX_DEV db 0
@@ -2032,10 +2033,34 @@ usb_scsi:
         cmp     [di+4], eax
         jne     .phase
         mov     eax, [di+8]             ; residue: what the device did not move
-        cmp     eax, [usb_xlen]
+%ifdef FAKE_RESIDUE
+        mov     eax, [usb_xlen]         ; test: a device whose residue is
+%endif                                  ; always the full length
+        or      eax, eax
+        jz      .resid
+        cmp     byte [usbd_noresid+bx], 0
+        jne     .resid
+        mov     edx, [x_xfer]           ; a complete INQUIRY (36 bytes) or
+        cmp     byte [di+12], 0         ; READ CAPACITY (8) with a residue:
+        jne     .use                    ; the device's residues are bogus,
+        cmp     edx, [usb_xlen]         ; the bytes counted are used (as
+        jne     .use                    ; Linux's US_FL_IGNORE_RESIDUE)
+        cmp     byte [cdb_buf], 12h
+        jne     .rcap
+        cmp     edx, 36
+        je      .bogus
+.rcap:  cmp     byte [cdb_buf], 25h
+        jne     .use
+        cmp     edx, 8
+        jne     .use
+.bogus: mov     byte [usbd_noresid+bx], 1
+        jmp     .resid
+.use:   cmp     eax, [usb_xlen]
         ja      .resid
         mov     edx, [usb_xlen]
         sub     edx, eax
+        cmp     edx, [x_xfer]           ; never more than came
+        jae     .resid
         mov     [x_xfer], edx
 .resid: mov     al, [di+12]
         or      al, al

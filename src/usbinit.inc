@@ -2791,6 +2791,7 @@ find_msc_interface:
         cmp     cl, 01h
         ja      .adv
 .proto: mov     [usbd_proto+bx], cl
+        mov     byte [usbd_noresid+bx], 0
         mov     cl, [si+6]
         mov     [usbd_sub+bx], cl
         mov     cl, [si+2]
@@ -3037,9 +3038,9 @@ msg_vidpid      db      ': USB device ', 0
 msg_usb_other   db      ' is not a bulk-only mass storage device', 13, 10, 0
 msg_usb_hid     db      ' is a HID device (for USBHID.SYS)', 13, 10, 0
 msg_usb_fail    db      ' does not answer', 13, 10, 0
-msg_bar_high    db      ' not used: BAR above 4 GB (load PCI4G.SYS first)', 13, 10, 0
-msg_hc_unused   db      ' not used (AMD-8111 EHCI erratum)', 13, 10, 0
-msg_xroute      db      'xHCI: Intel EHCI ports routed to xHCI, USB 2 ports ', 0
+msg_bar_high    db      ' BAR above 4 GB: load PCI4G.SYS', 13, 10, 0
+msg_hc_unused   db      ' not used (AMD-8111 erratum)', 13, 10, 0
+msg_xroute      db      'xHCI: Intel port routing ', 0
 msg_xhci_skip   db      ' skipped (/X takes it over; a USB keyboard or mouse on it', 13, 10
                 db      '    then only works again after a reboot)', 13, 10, 0
 msg_xhci_one    db      '    too many xHCI controllers', 13, 10, 0

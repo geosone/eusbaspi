@@ -2492,7 +2492,7 @@ msg_banner      db      'AHCIASPI ', VERSION_STR
                 db      ' - ASPI manager for ATAPI devices on AHCI', 13, 10, 0
 %endif
 msg_no386       db      '386 or better required', 13, 10, 0
-msg_bad_bar     db      'AHCI controller has no memory BAR', 13, 10, 0
+msg_bad_bar     db      ' without a usable BAR', 13, 10, 0
 msg_vds_fail    db      'VDS lock of DMA buffers failed', 13, 10, 0
 msg_bad_method  db      'Requested access method not available', 13, 10, 0
 msg_no_a20      db      'Cannot enable A20 for flat mode', 13, 10, 0

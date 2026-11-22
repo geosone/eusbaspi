@@ -65,7 +65,7 @@ USB keyboards type through the keyboard controller as well (8042 command D2h): e
 
 ## Controllers above 4 GB: PCI4G
 
-With "Above 4G Decoding" on in the BIOS setup, the firmware may place a USB controller's registers (a 64-bit BAR) above 4 GB, out of reach of DOS; EUSBASPI then reports `BAR above 4 GB (load PCI4G.SYS first)`. `PCI4G.SYS`, loaded before `EUSBASPI.SYS` (and `AHCIASPI.SYS`), moves the BARs of USB (class 0C03h) and mass storage controllers (class 01h) into free space below 4 GB and stays 0 bytes resident:
+With "Above 4G Decoding" on in the BIOS setup, the firmware may place a USB controller's registers (a 64-bit BAR) above 4 GB, out of reach of DOS; EUSBASPI then reports `BAR above 4 GB: load PCI4G.SYS`. `PCI4G.SYS`, loaded before `EUSBASPI.SYS` (and `AHCIASPI.SYS`), moves the BARs of USB (class 0C03h) and mass storage controllers (class 01h) into free space below 4 GB and stays 0 bytes resident:
 
     DEVICE=C:\OPENASPI\PCI4G.SYS [/V]
 

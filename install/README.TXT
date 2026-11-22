@@ -162,7 +162,7 @@ Controllers above 4 GB: PCI4G
 
 With "Above 4G Decoding" on in the BIOS setup, the firmware may put the
 registers of a USB controller above 4 GB, where DOS drivers cannot reach
-them; EUSBASPI then says "BAR above 4 GB (load PCI4G.SYS first)".
+them; EUSBASPI then says "BAR above 4 GB: load PCI4G.SYS".
 PCI4G.SYS, loaded before EUSBASPI.SYS (and AHCIASPI.SYS), moves the
 registers of USB and disk controllers into free space below 4 GB.  It
 does that when it is loaded and stays 0 bytes resident:

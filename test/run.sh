@@ -17,6 +17,8 @@
 #               it is plugged in after the BIOS (DELAY.SYS waits for it)
 #   HOTPLUG_EXTRA  more monitor commands (| separated) run when the stick
 #               is plugged in, e.g. 'device_add usb-serial,chardev=cn,bus=usbhc.0'
+#   NASM_DEFS  more nasm options for EUSBASPI.SYS, e.g. -DFAKE_RESIDUE (every
+#            CSW reports the full length as residue, as some devices do)
 #   EMM=1    load JEMMEX (V86 mode, VDS, UMBs) first; HIGH=1 also loads
 #            EUSBASPI.SYS with DEVICEHIGH
 #   MM, MMOPTS  other memory managers, see test/mm.sh
@@ -47,7 +49,7 @@ JEMM_ZIP=${JEMM_ZIP:-$DOS/JemmB_v586.zip}
 OPTS="$*"
 
 rm -rf "$OUT"; mkdir -p "$OUT"
-nasm -f bin -w-reloc-abs-word -DE9LOG -I"$ROOT/src/" -o "$OUT/EUSBASPI.SYS" "$ROOT/src/eusbaspi.asm" || exit 1
+nasm -f bin -w-reloc-abs-word -DE9LOG ${NASM_DEFS:-} -I"$ROOT/src/" -o "$OUT/EUSBASPI.SYS" "$ROOT/src/eusbaspi.asm" || exit 1
 nasm -f bin -w-reloc-abs-word -I"$ROOT/tools/" -I"$ROOT/src/" -o "$OUT/ASPITEST.COM" "$ROOT/tools/aspitest.asm" || exit 1
 nasm -f bin -o "$OUT/CDSDUMP.COM" "$ROOT/tools/cdsdump.asm"
 nasm -f bin -o "$OUT/QEXIT.COM" "$ROOT/tools/qexit.asm"

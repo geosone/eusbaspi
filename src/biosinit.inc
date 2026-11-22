@@ -36,8 +36,7 @@ msg_bd1         db      '  BIOS drive ', 0
 msg_bd2         db      'h is ID ', 0
 msg_bd3         db      ': INT 13h taken over', 13, 10, 0
 msg_bd3nd       db      ': INT 13h taken over (no DOS drive)', 13, 10, 0
-msg_bdnobuf     db      '  loaded high: BIOS drives on USB stay the BIOS', 39, 's (load EUSBASPI low', 13, 10
-                db      '  to take them over)', 13, 10, 0
+msg_bdnobuf     db      '  loaded high: the BIOS keeps its USB drives (load low to take them)', 13, 10, 0
 msg_bdamb       db      'h: more than one device fits, left to the BIOS', 13, 10, 0
 
 ; SI -> EAX = hash of the 512 bytes there

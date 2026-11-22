@@ -29,6 +29,6 @@ t jemmex  "$moved" DEVICES="$D" EMM=1
 grep -aq "$read_ok" "$W/jemmex.log" || { echo "FAIL jemmex: stick not read"; fail=1; }
 t nothing 'PCI4G: no USB or disk controller BAR above 4 GB' \
           DEVICES='A:\PCI4G.SYS /V|A:\EUSBASPI.SYS /X /V|A:\ASPIDISK.SYS'
-t hint    'not used: BAR above 4 GB \(load PCI4G.SYS first\)' TIMEOUT=25 \
+t hint    'BAR above 4 GB: load PCI4G.SYS' TIMEOUT=25 \
           DEVICES='A:\BARHIGH.SYS|A:\EUSBASPI.SYS /X /V|A:\ASPIDISK.SYS'
 exit $fail
