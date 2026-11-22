@@ -109,8 +109,13 @@ usb_setup_dma:
         mov     [phys_ud], eax
         lea     ax, [bx+UD_SCRATCH]     ; INT 15h register access
         mov     [scratch_ptr], ax
-        mov     eax, [phys_ud]
-        add     eax, UD_SCRATCH - UD_HCCA
+        push    edx                     ; its linear address: INT 15h AH=87h
+        mov     dx, cs                  ; of a memory manager moves in the
+        movzx   edx, dx                 ; address space of DOS, and a UMB
+        shl     edx, 4                  ; is not where VDS says it is
+        movzx   eax, ax
+        add     eax, edx
+        pop     edx
         mov     [phys_scratch], eax
 
         mov     ax, cs                  ; flat mode GDT
