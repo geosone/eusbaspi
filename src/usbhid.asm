@@ -845,8 +845,10 @@ init:
         pop     cx
         pop     bx
         cmp     byte [frec+2], 1        ; boot interface
-        jne     .nf
-        mov     al, [frec+3]
+        je      .boot
+        call    boot_like               ; or reports like one's
+        jc      .nf
+.boot:  mov     al, [frec+3]
         cmp     al, 2                   ; mouse
         je      .mo
         cmp     al, 1                   ; keyboard
@@ -1025,6 +1027,88 @@ find_eusbaspi:
         ret
 
 ;-----------------------------------------------------------------------------
+; function BL (frec) is not a boot interface: are its reports those of
+; one?  Keyboards and mice that leave the boot subclass out (KVM switches,
+; USB gadgets) but send the same reports: a keyboard 8 bytes, a mouse
+; buttons and relative X and Y, both without report IDs.  CF if not.
+boot_like:
+        push    bx
+        push    cx
+        push    si
+        mov     al, [frec+3]
+        cmp     al, 2
+        je      .get
+        cmp     al, 1
+        jne     .no
+        cmp     word [frec+6], 8
+        jne     .no
+.get:   mov     word [bl_setup], 0681h  ; GET_DESCRIPTOR(report), interface
+        mov     word [bl_setup+2], 2200h
+        movzx   ax, byte [frec+1]
+        mov     [bl_setup+4], ax
+        mov     word [bl_setup+6], 128
+        mov     word [bl_setup+8], rbuf
+        mov     [bl_setup+10], cs
+        push    cs
+        pop     es
+        mov     di, bl_setup
+        mov     ah, 2
+        call    far [api]
+        or      al, al
+        jnz     .no
+        cmp     cx, 128
+        ja      .no
+        mov     si, rbuf
+        xor     dl, dl                  ; DL = 1: usage X since the last input
+.item:  cmp     cx, 1
+        jb      .yes
+        mov     al, [si]
+        cmp     al, 0FEh                ; long item
+        jne     .short
+        cmp     cx, 3
+        jb      .yes
+        movzx   bx, byte [si+1]
+        add     bx, 3
+        jmp     .next
+.short: mov     bl, al
+        and     bx, 3
+        cmp     bl, 3
+        jne     .len
+        inc     bx                      ; 3 = four bytes
+.len:   inc     bx
+        cmp     bx, cx
+        ja      .yes
+        mov     ah, al
+        and     ah, 0FCh
+        cmp     ah, 84h                 ; report ID
+        je      .no
+        cmp     ax, 0809h               ; usage, one byte
+        jne     .inp
+        cmp     byte [si+1], 30h        ; X
+        jne     .next
+        mov     dl, 1
+        jmp     .next
+.inp:   cmp     ah, 80h                 ; input
+        jne     .next
+        or      dl, dl
+        jz      .next
+        xor     dl, dl
+        cmp     al, 80h                 ; (no data: absolute)
+        je      .no
+        test    byte [si+1], 4          ; X must be relative
+        jz      .no
+.next:  add     si, bx
+        sub     cx, bx
+        jmp     .item
+.yes:   clc
+        jmp     .out
+.no:    stc
+.out:   pop     si
+        pop     cx
+        pop     bx
+        ret
+bl_setup        times 12 db 0
+
 ; the 8042: does it take D2h (keyboards) and D3h (mice), a byte into its
 ; output buffer as if the keyboard or the mouse had sent it?  Then the
 ; keyboard / mouse interrupt goes on (and the mouse port) -> kbc_kbd, kbc_ok
