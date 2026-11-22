@@ -7,6 +7,8 @@
 #   MM=jemmex   JemmEx (V86 mode, VDS, UMBs)
 #   MM=386max   386MAX.SYS (V86 mode, VDS, UMBs)
 #   MMOPTS      options for the EMM (default NOEMS; 386MAX: none)
+#   MMDOS       386MAX: the DOS= line (default HIGH,UMB; HIGH leaves the UMBs
+#               to 386MAX, as 386LOAD and MAXIMIZE need it)
 #   HIGH=1      load the ASPI drivers with DEVICEHIGH and MSCDEX with LH
 #
 # Sources (override if needed):
@@ -51,7 +53,7 @@ mm_setup() {
         # without its VxD next to it, 386MAX waits for a key at boot
         mcopy -o -i "$img" "$(dirname "$MAX386")/386MAX.VXD" ::/386MAX.VXD
         echo "DEVICE=A:\\386MAX.SYS ${MMOPTS-}"
-        echo 'DOS=HIGH,UMB' ;;
+        echo "DOS=${MMDOS-HIGH,UMB}" ;;
     *) echo "unknown MM=$mm" >&2; return 1 ;;
     esac
 }
